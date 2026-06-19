@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dev Dashboard</title>
+<script src="/vendor/tailwind.js"></script>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<script src="/vendor/mermaid.min.js"></script>
+<script>
+  tailwind.config = { darkMode: 'class' };
+  mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+  marked.setOptions({ gfm: true, breaks: true });
+</script>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #111827; color: #f3f4f6; }
+  .tab-btn { padding: 6px 14px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s; color: #9ca3af; }
+  .tab-btn:hover { background: #374151; color: #f3f4f6; }
+  .tab-btn.active { background: #1d4ed8; color: #fff; }
+  .panel { display: none; height: calc(100vh - 52px); overflow-y: auto; }
+  .panel.active { display: flex; flex-direction: column; }
+  /* Chat bubbles */
+  .msg-user { background: #1d4ed8; border-radius: 12px 12px 2px 12px; }
+  .msg-assistant { background: #1f2937; border-radius: 12px 12px 12px 2px; }
+  /* Markdown in chat */
+  .prose table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  .prose table th, .prose table td { border: 1px solid #374151; padding: 6px 12px; text-align: left; }
+  .prose table th { background: #374151; font-weight: 600; }
+  .prose table tr:nth-child(even) { background: #1f2937; }
+  .prose code { background: #374151; padding: 1px 5px; border-radius: 4px; font-size: 0.875em; }
+  .prose pre { background: #0f172a; border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
+  .prose pre code { background: none; padding: 0; }
+  .prose h1,.prose h2,.prose h3 { font-weight: 700; margin: 12px 0 6px; }
+  .prose h1 { font-size: 1.4em; } .prose h2 { font-size: 1.2em; } .prose h3 { font-size: 1.05em; }
+  .prose ul, .prose ol { padding-left: 1.5em; margin: 6px 0; }
+  .prose li { margin: 2px 0; }
+  .prose blockquote { border-left: 3px solid #4b5563; padding-left: 12px; color: #9ca3af; margin: 8px 0; }
+  .prose a { color: #60a5fa; text-decoration: underline; }
+  /* Make terminal output */
+  .make-output { font-family: monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  /* Badge */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+  /* Input */
+  input[type="text"], input[type="password"], select, textarea {
+    background: #1f2937; border: 1px solid #374151; border-radius: 6px;
+    color: #f3f4f6; padding: 6px 10px; outline: none; font-size: 14px;
+  }
+  input:focus, select:focus, textarea:focus { border-color: #4b6bfb; }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1f2937; }
+  ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+  /* Status dot */
+  .dot-green { background: #22c55e; }
+  .dot-yellow { background: #eab308; animation: blink 1s ease-in-out infinite; }
+  .dot-gray { background: #6b7280; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+  /* DB card */
+  .db-card { cursor: pointer; transition: all 0.15s; }
+  .db-card:hover { border-color: #4b6bfb !important; }
+  .db-card.active-db { border-color: #3b82f6 !important; }
+  .db-card.active-db.odoo-running { border-color: #22c55e !important; }
+  /* Modal */
+  #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; align-items: center; justify-content: center; }
+  #modal.open { display: flex; }
+</style>
+</head>
+<body class="dark">
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header class="bg-gray-800 border-b border-gray-700 px-4 h-[52px] flex items-center gap-4 shrink-0">
+  <span class="font-bold text-orange-400 text-sm tracking-wide">⚙ Dev Dashboard</span>
+  <nav class="flex gap-1">
+    <button class="tab-btn active" onclick="showTab('sessions')" id="tab-sessions">Sessions</button>
+    <button class="tab-btn" onclick="showTab('chat')" id="tab-chat">AI Chat</button>
+    <button class="tab-btn" onclick="showTab('databases')" id="tab-databases">Databases</button>
+    <button class="tab-btn" onclick="showTab('make')" id="tab-make">Make</button>
+    <button class="tab-btn" onclick="showTab('board')" id="tab-board">Board</button>
+  </nav>
+  <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+    <span class="w-2 h-2 rounded-full dot-gray" id="odoo-dot"></span>
+    <span id="odoo-status-text">Odoo: checking…</span>
+    <button onclick="refreshOdooStatus()" title="Refresh Odoo status" class="ml-1 text-gray-500 hover:text-gray-200 transition-colors">⟳</button>
+    <a href="http://127.0.0.1:8069" target="_blank" class="ml-1 text-blue-400 hover:underline">Open Odoo ↗</a>
+  </div>
+</header>
+
+<!-- ── Tab: Sessions ────────────────────────────────────────────────────────── -->
+<div id="panel-sessions" class="panel active p-4 gap-3">
+  <div class="flex items-center gap-3 shrink-0">
+    <input type="text" id="session-search" placeholder="Search title or task number…" class="w-72" oninput="filterSessions()">
+    <button onclick="loadSessions()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺ Refresh</button>
+    <span class="text-xs text-gray-500" id="session-count"></span>
+  </div>
+  <div class="flex-1 overflow-auto rounded-lg border border-gray-700">
+    <table class="w-full text-sm" id="sessions-table">
+      <thead class="bg-gray-800 sticky top-0">
+        <tr>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-32">Date</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300">Title</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-28">Project</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-36">Task #</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-52">Notes</th>
+          <th class="w-16 px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody id="sessions-tbody">
+        <tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">Loading sessions…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Tab: AI Chat ──────────────────────────────────────────────────────────── -->
+<div id="panel-chat" class="panel p-0 relative">
+  <!-- Settings drawer -->
+  <div id="chat-settings" class="hidden absolute right-0 top-0 z-20 w-80 bg-gray-800 border-l border-b border-gray-700 p-4 shadow-xl rounded-bl-lg">
+    <h3 class="font-semibold mb-3">Chat Settings</h3>
+    <!-- Mode toggle -->
+    <label class="text-xs text-gray-400 block mb-1">Chat via</label>
+    <div class="flex gap-2 mb-3">
+      <button id="mode-btn-cli" onclick="setChatMode('cli')"
+        class="flex-1 py-1.5 rounded text-xs font-medium border transition-colors">
+        Claude Extension (CLI)
+      </button>
+      <button id="mode-btn-api" onclick="setChatMode('api')"
+        class="flex-1 py-1.5 rounded text-xs font-medium border transition-colors">
+        Anthropic API
+      </button>
+    </div>
+    <p id="cli-mode-note" class="text-xs text-green-400 mb-3 hidden">Uses your Claude Code OAuth — no API key needed.</p>
+    <!-- API section (shown when mode=api) -->
+    <div id="api-key-section">
+      <label class="text-xs text-gray-400 block mb-1">Anthropic API Key</label>
+      <input type="password" id="api-key-input" class="w-full mb-2" placeholder="sk-ant-api03-…">
+      <p class="text-xs text-gray-500 mb-3">Get from console.anthropic.com — separate from Claude Code credentials.</p>
+    </div>
+    <label class="text-xs text-gray-400 block mb-1">Model</label>
+    <select id="model-select" class="w-full mb-3">
+      <option value="claude-sonnet-4-6">claude-sonnet-4-6 (default)</option>
+      <option value="claude-opus-4-8">claude-opus-4-8 (most capable)</option>
+      <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (fast)</option>
+    </select>
+    <button onclick="saveSettings()" class="w-full py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-sm font-medium">Save</button>
+    <p id="settings-status" class="text-xs text-green-400 mt-2 hidden">Saved!</p>
+  </div>
+  <!-- Top bar -->
+  <div class="flex items-center gap-2 px-4 py-2 border-b border-gray-700 bg-gray-800 shrink-0">
+    <span class="text-sm font-medium text-gray-300">AI Chat</span>
+    <span id="chat-mode-badge" class="badge bg-gray-700 text-gray-400 text-xs ml-1"></span>
+    <span id="chat-model-badge" class="badge bg-gray-700 text-gray-300 text-xs"></span>
+    <div class="ml-auto flex gap-2">
+      <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-gray-200">Clear</button>
+      <button onclick="toggleSettings()" class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1">⚙ Settings</button>
+    </div>
+  </div>
+  <!-- Session picker (CLI mode only) -->
+  <div id="session-picker-row" class="hidden shrink-0 border-b border-gray-700 bg-gray-900/60 px-4 py-1.5 relative">
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-600 shrink-0">Session:</span>
+      <button onclick="toggleSessionPicker()" id="session-picker-btn"
+        class="flex items-center gap-1 text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 rounded px-2 py-1 max-w-lg min-w-0 flex-1 transition-colors">
+        <span id="session-picker-label" class="truncate">New conversation</span>
+        <span class="text-gray-600 shrink-0 ml-auto pl-1">▾</span>
+      </button>
+    </div>
+    <!-- Dropdown -->
+    <div id="session-picker-dd" class="hidden absolute left-0 right-0 top-full z-30 bg-gray-800 border border-gray-700 rounded-b-lg shadow-2xl overflow-y-auto" style="max-height:320px">
+      <button onclick="selectSessionItem(null)"
+        class="w-full text-left px-3 py-2 text-xs hover:bg-gray-700 border-b border-gray-600 text-blue-400 font-medium">
+        ✦ New conversation
+      </button>
+      <div id="session-picker-list"><div class="px-3 py-4 text-center text-gray-500 text-xs">Loading…</div></div>
+    </div>
+  </div>
+  <!-- No key banner (only for API mode) -->
+  <div id="no-key-banner" class="hidden m-4 p-3 bg-yellow-900/40 border border-yellow-700 rounded-lg text-sm text-yellow-200">
+    No Anthropic API key set. Click <button onclick="toggleSettings()" class="underline font-medium">Settings ⚙</button> to add your key from <a href="https://console.anthropic.com" target="_blank" class="underline">console.anthropic.com</a>.
+  </div>
+  <!-- Messages -->
+  <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3" id="chat-messages"></div>
+  <!-- Input -->
+  <div class="shrink-0 px-4 py-3 border-t border-gray-700 bg-gray-900">
+    <div class="flex gap-2 items-end">
+      <textarea id="chat-input" rows="3" class="flex-1 resize-none text-sm" placeholder="Ask Claude… (Enter to send · Shift+Enter for newline)" onkeydown="chatKeydown(event)"></textarea>
+      <button onclick="sendChat()" id="chat-send-btn" class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded font-medium text-sm whitespace-nowrap self-end">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Databases ────────────────────────────────────────────────────────── -->
+<div id="panel-databases" class="panel p-4 gap-4">
+  <div class="flex items-center gap-2 shrink-0 flex-wrap">
+    <h2 class="font-semibold">PostgreSQL Databases</h2>
+    <button onclick="loadDatabases()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺ Refresh</button>
+    <button onclick="openProfileModal()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">✎ Edit Profiles</button>
+    <button onclick="toggleOdooLog()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm" id="odoo-log-btn">≡ Log</button>
+    <button onclick="restartOdoo()" id="restart-odoo-btn" class="hidden px-3 py-1.5 bg-yellow-900/70 hover:bg-yellow-900 text-yellow-300 rounded text-sm">↺ Restart Odoo</button>
+    <button onclick="stopOdoo()" id="stop-odoo-btn" class="hidden px-3 py-1.5 bg-red-900/70 hover:bg-red-900 text-red-300 rounded text-sm">■ Stop Odoo</button>
+    <div class="ml-auto flex items-center gap-2 text-sm">
+      <span class="w-2 h-2 rounded-full" id="db-odoo-dot"></span>
+      <span id="db-odoo-status" class="text-gray-400">Checking…</span>
+    </div>
+  </div>
+  <!-- Odoo live log panel (hidden by default) -->
+  <div id="odoo-log-panel" class="hidden shrink-0 bg-gray-950 border border-gray-700 rounded-lg overflow-hidden" style="height:200px">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700 bg-gray-900">
+      <span class="text-xs font-semibold text-blue-400">Odoo Log</span>
+      <span class="text-xs text-gray-600 font-mono truncate" id="odoo-log-path-label"></span>
+      <button onclick="restartOdooLog()" class="text-xs text-gray-500 hover:text-gray-300 ml-1">↺</button>
+      <button onclick="toggleOdooLog()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">✕</button>
+    </div>
+    <div class="overflow-y-auto p-2" style="height:calc(200px - 34px)" id="odoo-log-scroll">
+      <pre class="make-output text-blue-200 text-xs" id="odoo-log-text"></pre>
+    </div>
+  </div>
+  <p class="text-xs text-gray-500 shrink-0">Click Switch on a database card to change Odoo's active DB and restart. Green border = current active.</p>
+  <div id="db-grid" class="grid grid-cols-3 gap-3 content-start overflow-y-auto">
+    <div class="col-span-3 text-center text-gray-500 py-8">Loading…</div>
+  </div>
+</div>
+
+<!-- ── Tab: Make ─────────────────────────────────────────────────────────────── -->
+<div id="panel-make" class="panel p-4 gap-4">
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="font-semibold">Makefile Runner</h2>
+    <span class="text-xs text-gray-500">Working dir: /home/server/odoo-17.0</span>
+    <div class="ml-auto flex gap-2">
+      <button onclick="toggleLineLog()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm" id="line-log-btn">LINE Log</button>
+    </div>
+  </div>
+  <!-- LINE live log panel (hidden by default) -->
+  <div id="line-log-panel" class="hidden shrink-0 bg-gray-950 border border-gray-700 rounded-lg overflow-hidden" style="height:180px">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700 bg-gray-900">
+      <span class="text-xs font-semibold text-green-400">LINE Service Log</span>
+      <select id="line-log-source" class="text-xs h-6 ml-1" onchange="restartLineLog()">
+        <option value="uvicorn">uvicorn</option>
+        <option value="ngrok">ngrok</option>
+      </select>
+      <button onclick="restartLineLog()" class="text-xs text-gray-500 hover:text-gray-300 ml-1">↺</button>
+      <button onclick="toggleLineLog()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">✕</button>
+    </div>
+    <div class="h-full overflow-y-auto p-2" id="line-log-scroll">
+      <pre class="make-output text-green-300 text-xs" id="line-log-text"></pre>
+    </div>
+  </div>
+  <div class="flex gap-4 flex-1 overflow-hidden">
+    <!-- Targets -->
+    <div class="flex-1 overflow-y-auto space-y-4 pr-2" id="make-targets">
+      <div class="text-center text-gray-500 py-8">Loading targets…</div>
+    </div>
+    <!-- Output panel -->
+    <div class="w-[420px] shrink-0 flex flex-col bg-gray-950 border border-gray-700 rounded-lg overflow-hidden">
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-900" id="make-output-header">
+        <span class="text-xs font-mono text-gray-400" id="make-output-cmd">Output</span>
+        <button onclick="copyMakeOutput()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">Copy</button>
+        <button onclick="clearMakeOutput()" class="text-xs text-gray-500 hover:text-gray-300">Clear</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3" id="make-output-scroll">
+        <pre class="make-output text-gray-300" id="make-output-text">Run a make target to see output here.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Board ─────────────────────────────────────────────────────────────── -->
+<div id="panel-board" class="panel p-4 gap-4">
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="font-semibold">Explanation Board</h2>
+    <span class="text-xs text-gray-500">Save tables, diagrams, and flowcharts from your sessions</span>
+    <button onclick="openAddBoardModal()" class="ml-auto px-3 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-sm">+ New Explanation</button>
+    <button onclick="loadBoard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺</button>
+  </div>
+  <div class="flex-1 overflow-y-auto">
+    <div id="board-grid" class="grid gap-4" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">
+      <div class="text-center text-gray-500 py-12 col-span-full">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Board: Add Modal ─────────────────────────────────────────────────────── -->
+<div id="board-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60;align-items:center;justify-content:center;">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl flex flex-col" style="width:700px;max-height:85vh;">
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold" id="board-modal-title">New Explanation</span>
+      <button onclick="closeBoardAddModal()" class="ml-auto text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+      <div class="flex gap-4">
+        <div class="flex-1">
+          <label class="block text-xs text-gray-400 mb-1">Title</label>
+          <input id="board-new-title" type="text" placeholder="e.g. Discount Flow" class="w-full">
+        </div>
+        <div class="w-36">
+          <label class="block text-xs text-gray-400 mb-1">Task # <span class="text-gray-600">(opt)</span></label>
+          <input id="board-new-task" type="text" placeholder="T26-12345" class="w-full">
+        </div>
+        <div class="w-40">
+          <label class="block text-xs text-gray-400 mb-1">Type</label>
+          <select id="board-new-type" class="w-full" onchange="updateBoardTypeHint()">
+            <option value="mermaid">Mermaid Diagram</option>
+            <option value="markdown">Markdown / Table</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Content <span id="board-type-hint" class="text-gray-500">(mermaid flowchart / sequenceDiagram / etc.)</span></label>
+        <textarea id="board-new-content" rows="14" class="w-full font-mono text-sm" placeholder="graph TD&#10;  A[Start] --> B[End]"></textarea>
+      </div>
+      <div id="board-preview-wrap" class="hidden">
+        <label class="block text-xs text-gray-400 mb-1">Preview</label>
+        <div id="board-preview-content" class="bg-gray-900 rounded p-4 prose prose-invert min-h-[80px] overflow-x-auto"></div>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="previewBoardContent()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm">Preview</button>
+        <button onclick="saveBoardItem()" class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-semibold">Save</button>
+        <button onclick="closeBoardAddModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Board: Expand Modal ─────────────────────────────────────────────────── -->
+<div id="board-expand-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60;align-items:center;justify-content:center;">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl flex flex-col" style="width:800px;max-height:88vh;">
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold" id="board-expand-title"></span>
+      <span class="text-xs px-2 py-0.5 rounded-full" id="board-expand-type-badge"></span>
+      <button onclick="closeBoardExpandModal()" class="ml-auto text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5">
+      <div id="board-expand-content" class="prose prose-invert overflow-x-auto"></div>
+    </div>
+    <div class="px-5 py-3 border-t border-gray-700 flex items-center gap-3 shrink-0 text-xs text-gray-500">
+      <span id="board-expand-session"></span>
+      <span id="board-expand-task"></span>
+      <span id="board-expand-date" class="ml-auto"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Addons Profile Editor Modal ───────────────────────────────────────────── -->
+<div id="profile-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60;align-items:center;justify-content:center;">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl flex flex-col" style="width:680px;max-height:80vh;">
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold">Edit Addons Path Profiles</span>
+      <span class="text-xs text-gray-500">Changes take effect on next DB switch</span>
+      <button onclick="closeProfileModal()" class="ml-auto text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Profile list — populated by renderProfileTabs() -->
+      <div class="w-36 shrink-0 border-r border-gray-700 p-2 flex flex-col gap-1 overflow-y-auto" id="profile-tabs"></div>
+      <!-- Path editor -->
+      <div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
+        <div class="flex items-center gap-2">
+          <span class="font-mono font-semibold text-sm" id="profile-editor-title"></span>
+          <button onclick="resetProfileToDefault()" class="ml-auto text-xs text-gray-500 hover:text-yellow-400">Reset to default</button>
+        </div>
+        <div id="profile-paths-list" class="flex flex-col gap-1"></div>
+        <!-- Add path row -->
+        <div class="flex gap-2 mt-1">
+          <input type="text" id="new-path-input" class="flex-1 text-xs" placeholder="/home/server/odoo-17.0/…"
+            onkeydown="if(event.key==='Enter') addProfilePath()">
+          <button onclick="addProfilePath()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ Add path</button>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-gray-700">
+          <button onclick="saveCurrentProfile()" class="px-4 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-sm font-medium">Save profile</button>
+          <span id="profile-save-status" class="text-xs text-green-400 self-center hidden">Saved!</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Modal ─────────────────────────────────────────────────────────── -->
+<div id="modal">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 p-6 w-[420px] shadow-2xl">
+    <h3 class="font-semibold text-lg mb-2" id="modal-title">Confirm</h3>
+    <p class="text-sm text-gray-300 mb-3" id="modal-body"></p>
+    <!-- Odoo version selector (shown only for DB switch) -->
+    <div id="modal-version-row" class="hidden mb-4 p-3 bg-gray-900 rounded-lg border border-gray-700">
+      <label class="text-xs text-gray-400 block mb-1">Start with Odoo version:</label>
+      <select id="modal-odoo-version" class="w-full text-sm"></select>
+      <p id="modal-version-warn" class="text-xs text-yellow-400 mt-1 hidden"></p>
+    </div>
+    <div class="flex gap-3 justify-end">
+      <button onclick="closeModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
+      <button onclick="modalConfirm()" id="modal-ok" class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-medium">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'sessions' && !window._sessionsLoaded) loadSessions();
+  if (name === 'chat' && !window._chatInit) initChat();
+  if (name === 'databases') loadDatabases();
+  if (name === 'make' && !window._makeLoaded) loadMakeTargets();
+  if (name === 'board') { _boardItems = []; loadBoard(); }
+}
+
+// ── Odoo status bar ────────────────────────────────────────────────────────────
+async function refreshOdooStatus() {
+  try {
+    const r = await fetch('/api/odoo/status');
+    const d = await r.json();
+    const dot = document.getElementById('odoo-dot');
+    const txt = document.getElementById('odoo-status-text');
+    if (d.running) {
+      dot.className = 'w-2 h-2 rounded-full dot-green';
+      txt.textContent = `Odoo: ${d.db || 'running'} (PID ${d.pid})`;
+    } else {
+      dot.className = 'w-2 h-2 rounded-full dot-gray';
+      txt.textContent = 'Odoo: not running';
+    }
+    // Mirror into DB tab
+    const dbDot = document.getElementById('db-odoo-dot');
+    const dbTxt = document.getElementById('db-odoo-status');
+    if (dbDot) {
+      dbDot.className = `w-2 h-2 rounded-full ${d.running ? 'dot-green' : 'dot-gray'}`;
+      dbTxt.textContent = d.running ? `Running on ${d.db || '—'} (PID ${d.pid})` : 'Not running';
+    }
+    // Show Stop/Restart buttons only when Odoo is actually running
+    const stopBtn = document.getElementById('stop-odoo-btn');
+    if (stopBtn) stopBtn.classList.toggle('hidden', !d.running);
+    const restartBtn = document.getElementById('restart-odoo-btn');
+    if (restartBtn) restartBtn.classList.toggle('hidden', !d.running);
+    // Update configured-DB badge: Active (green) when running, In conf (blue) when stopped
+    const activeBadge = document.getElementById('active-db-badge');
+    if (activeBadge) {
+      if (d.running) {
+        activeBadge.textContent = 'Active';
+        activeBadge.className = 'badge bg-green-900 text-green-300 text-xs';
+        activeBadge.closest('.db-card')?.classList.add('odoo-running');
+      } else {
+        activeBadge.textContent = 'In conf';
+        activeBadge.className = 'badge bg-blue-900 text-blue-300 text-xs';
+        activeBadge.closest('.db-card')?.classList.remove('odoo-running');
+      }
+    }
+  } catch {}
+}
+setInterval(() => { if (!document.hidden) refreshOdooStatus(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshOdooStatus(); });
+refreshOdooStatus();
+
+// ── Sessions Tab ───────────────────────────────────────────────────────────────
+let allSessions = [];
+
+async function loadSessions() {
+  document.getElementById('sessions-tbody').innerHTML =
+    '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">Loading…</td></tr>';
+  try {
+    const r = await fetch('/api/sessions');
+    allSessions = await r.json();
+    window._sessionsLoaded = true;
+    renderSessions(allSessions);
+  } catch (e) {
+    document.getElementById('sessions-tbody').innerHTML =
+      `<tr><td colspan="6" class="px-3 py-4 text-center text-red-400">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function filterSessions() {
+  const q = document.getElementById('session-search').value.toLowerCase();
+  if (!q) { renderSessions(allSessions); return; }
+  renderSessions(allSessions.filter(s =>
+    (s.ai_title || '').toLowerCase().includes(q) ||
+    (s.task_number || '').toLowerCase().includes(q) ||
+    (s.notes || '').toLowerCase().includes(q)
+  ));
+}
+
+function renderSessions(sessions) {
+  document.getElementById('session-count').textContent = `${sessions.length} sessions`;
+  const tbody = document.getElementById('sessions-tbody');
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">No sessions found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions.map(s => {
+    const badge = s.task_number
+      ? `<span class="badge bg-orange-900 text-orange-300">${escHtml(s.task_number)}</span>`
+      : `<span class="text-gray-600 text-xs">—</span>`;
+    const titleClass = s.has_ai_title ? 'text-gray-200' : 'text-gray-500 italic';
+    const projColor = s.project === 'odoo-17.0' ? 'text-blue-400' : s.project === 'odoo-19.0' ? 'text-green-400' : 'text-purple-400';
+    return `<tr class="border-t border-gray-800 hover:bg-gray-800/40" id="row-${s.session_id}">
+      <td class="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">${escHtml(s.date)}</td>
+      <td class="px-3 py-2 ${titleClass}" title="${escHtml(s.ai_title)}">${escHtml(s.ai_title.slice(0,72))}${s.ai_title.length>72?'…':''}</td>
+      <td class="px-3 py-2 text-xs ${projColor}">${escHtml(s.project)}</td>
+      <td class="px-3 py-2" id="task-cell-${s.session_id}">${badge}</td>
+      <td class="px-3 py-2 text-xs text-gray-400 max-w-[200px] truncate" title="${escHtml(s.notes)}">${escHtml(s.notes) || ''}</td>
+      <td class="px-3 py-2">
+        <button onclick="editTask('${s.session_id}')" class="text-xs text-blue-400 hover:text-blue-300 whitespace-nowrap">Edit</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function editTask(sid) {
+  const row = document.getElementById('row-' + sid);
+  const session = allSessions.find(s => s.session_id === sid);
+  if (!session) return;
+  const cell = document.getElementById('task-cell-' + sid);
+
+  // Replace row with inline editor
+  row.innerHTML = `
+    <td class="px-3 py-1 text-xs text-gray-400">${escHtml(session.date)}</td>
+    <td class="px-3 py-1 text-gray-200" colspan="2" title="${escHtml(session.ai_title)}">${escHtml(session.ai_title.slice(0,72))}</td>
+    <td class="px-3 py-1">
+      <input type="text" id="edit-task-${sid}" value="${escHtml(session.task_number || '')}"
+        placeholder="T26-04156" class="w-28 text-xs py-1" maxlength="10"
+        onkeydown="if(event.key==='Enter')saveTask('${sid}');if(event.key==='Escape')cancelEdit('${sid}')">
+    </td>
+    <td class="px-3 py-1" colspan="2">
+      <input type="text" id="edit-notes-${sid}" value="${escHtml(session.notes || '')}"
+        placeholder="notes…" class="w-44 text-xs py-1"
+        onkeydown="if(event.key==='Enter')saveTask('${sid}');if(event.key==='Escape')cancelEdit('${sid}')">
+      <button onclick="saveTask('${sid}')" class="ml-2 text-xs text-green-400 hover:text-green-300">Save</button>
+      <button onclick="cancelEdit('${sid}')" class="ml-1 text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+    </td>`;
+  document.getElementById('edit-task-' + sid)?.focus();
+}
+
+function cancelEdit(sid) {
+  renderSessions(allSessions.filter(s => {
+    const q = document.getElementById('session-search').value.toLowerCase();
+    return !q || (s.ai_title||'').toLowerCase().includes(q) || (s.task_number||'').toLowerCase().includes(q);
+  }));
+}
+
+async function saveTask(sid) {
+  const taskInput = document.getElementById('edit-task-' + sid);
+  const notesInput = document.getElementById('edit-notes-' + sid);
+  const taskNum = (taskInput?.value || '').trim().toUpperCase();
+  const notes = (notesInput?.value || '').trim();
+
+  // Auto-format: if user typed just digits, prepend T26-
+  let formatted = taskNum;
+  if (/^\d{5}$/.test(formatted)) formatted = 'T26-' + formatted;
+
+  try {
+    const r = await fetch(`/api/sessions/${sid}/task`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({task_number: formatted, notes})
+    });
+    if (!r.ok) { const d = await r.json(); alert(d.detail || 'Error'); return; }
+    // Update local data
+    const s = allSessions.find(s => s.session_id === sid);
+    if (s) { s.task_number = formatted; s.notes = notes; }
+    renderSessions(allSessions);
+  } catch (e) { alert(e.message); }
+}
+
+// ── AI Chat Tab ────────────────────────────────────────────────────────────────
+let chatHistory = [];
+let chatStreaming = false;
+let chatMode = 'cli';       // 'cli' or 'api'
+let cliSessionId = null;    // Claude Code session UUID for --resume
+
+async function initChat() {
+  window._chatInit = true;
+  try {
+    const r = await fetch('/api/settings');
+    const d = await r.json();
+    document.getElementById('model-select').value = d.chat_model || 'claude-sonnet-4-6';
+    document.getElementById('chat-model-badge').textContent = d.chat_model || '';
+    chatMode = d.chat_mode || (d.cli_available ? 'cli' : 'api');
+    applyModeUI(chatMode, d);
+    if (d.api_key_preview) {
+      document.getElementById('api-key-input').placeholder = d.api_key_preview;
+    }
+  } catch {}
+}
+
+function applyModeUI(mode, d = {}) {
+  const cliBadge = document.getElementById('chat-mode-badge');
+  const cliBtn = document.getElementById('mode-btn-cli');
+  const apiBtn = document.getElementById('mode-btn-api');
+  const apiSection = document.getElementById('api-key-section');
+  const cliNote = document.getElementById('cli-mode-note');
+  const noKeyBanner = document.getElementById('no-key-banner');
+
+  const pickerRow = document.getElementById('session-picker-row');
+  if (mode === 'cli') {
+    cliBadge.textContent = 'via Claude CLI';
+    cliBadge.className = 'badge bg-green-900 text-green-300 text-xs ml-1';
+    cliBtn.className = 'flex-1 py-1.5 rounded text-xs font-medium border border-green-600 bg-green-900/40 text-green-300 transition-colors';
+    apiBtn.className = 'flex-1 py-1.5 rounded text-xs font-medium border border-gray-600 text-gray-400 hover:bg-gray-700 transition-colors';
+    apiSection.classList.add('hidden');
+    cliNote.classList.remove('hidden');
+    noKeyBanner.classList.add('hidden');
+    if (pickerRow) pickerRow.classList.remove('hidden');
+  } else {
+    cliBadge.textContent = 'via API';
+    cliBadge.className = 'badge bg-indigo-900 text-indigo-300 text-xs ml-1';
+    cliBtn.className = 'flex-1 py-1.5 rounded text-xs font-medium border border-gray-600 text-gray-400 hover:bg-gray-700 transition-colors';
+    apiBtn.className = 'flex-1 py-1.5 rounded text-xs font-medium border border-indigo-600 bg-indigo-900/40 text-indigo-300 transition-colors';
+    apiSection.classList.remove('hidden');
+    cliNote.classList.add('hidden');
+    if (!d.api_key_set) noKeyBanner.classList.remove('hidden');
+    if (pickerRow) pickerRow.classList.add('hidden');
+  }
+}
+
+function setChatMode(mode) {
+  chatMode = mode;
+  applyModeUI(mode, {});
+}
+
+function toggleSettings() {
+  const el = document.getElementById('chat-settings');
+  el.classList.toggle('hidden');
+}
+
+async function saveSettings() {
+  const key = document.getElementById('api-key-input').value.trim();
+  const model = document.getElementById('model-select').value;
+  const body = {chat_model: model, chat_mode: chatMode};
+  if (key) body.anthropic_api_key = key;
+  await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  document.getElementById('chat-model-badge').textContent = model;
+  if (key && chatMode === 'api') {
+    document.getElementById('no-key-banner').classList.add('hidden');
+    document.getElementById('api-key-input').value = '';
+    document.getElementById('api-key-input').placeholder = key.slice(0,8) + '...';
+  }
+  // Close drawer
+  document.getElementById('chat-settings').classList.add('hidden');
+}
+
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+function clearChat() {
+  chatHistory = [];
+  cliSessionId = null;
+  currentSessionProject = null;
+  document.getElementById('chat-messages').innerHTML = '';
+  const lbl = document.getElementById('session-picker-label');
+  if (lbl) lbl.textContent = 'New conversation';
+}
+
+// ── Session picker ─────────────────────────────────────────────────────────────
+let currentSessionProject = null;
+let _pickerSessions = [];
+
+function toggleSessionPicker() {
+  const dd = document.getElementById('session-picker-dd');
+  if (dd.classList.contains('hidden')) {
+    dd.classList.remove('hidden');
+    loadSessionPickerList();
+  } else {
+    dd.classList.add('hidden');
+  }
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('session-picker-dd');
+  const btn = document.getElementById('session-picker-btn');
+  if (!dd || dd.classList.contains('hidden')) return;
+  if (!dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.classList.add('hidden');
+  }
+});
+
+async function loadSessionPickerList() {
+  const list = document.getElementById('session-picker-list');
+  if (allSessions.length) {
+    _pickerSessions = allSessions;
+    renderPickerList();
+    return;
+  }
+  list.innerHTML = '<div class="px-3 py-4 text-center text-gray-500 text-xs">Loading…</div>';
+  try {
+    _pickerSessions = await (await fetch('/api/sessions')).json();
+    allSessions = _pickerSessions;
+    renderPickerList();
+  } catch (e) {
+    list.innerHTML = `<div class="px-3 py-4 text-center text-red-400 text-xs">${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderPickerList() {
+  document.getElementById('session-picker-list').innerHTML = _pickerSessions.slice(0, 30).map((s, i) => {
+    const title = (s.ai_title || '(untitled)').slice(0, 65);
+    const projCls = s.project === 'odoo-17.0' ? 'text-blue-400' : s.project === 'odoo-19.0' ? 'text-green-400' : 'text-purple-400';
+    const taskHtml = s.task_number ? `<span class="text-orange-400 ml-1">${escHtml(s.task_number)}</span>` : '';
+    return `<button onclick="selectSessionByIdx(${i})"
+      class="w-full text-left px-3 py-2 text-xs hover:bg-gray-700 border-b border-gray-700/40 flex flex-col gap-0.5">
+      <span class="text-gray-200">${escHtml(title)}</span>
+      <span class="flex items-center gap-2 text-gray-500">
+        <span class="${projCls}">${escHtml(s.project)}</span>
+        <span>${escHtml(s.date)}</span>
+        ${taskHtml}
+      </span>
+    </button>`;
+  }).join('');
+}
+
+function selectSessionByIdx(i) {
+  selectSessionItem(_pickerSessions[i] || null);
+}
+
+function selectSessionItem(session) {
+  document.getElementById('session-picker-dd').classList.add('hidden');
+  chatHistory = [];
+  if (!session) {
+    cliSessionId = null;
+    currentSessionProject = null;
+    document.getElementById('session-picker-label').textContent = 'New conversation';
+    document.getElementById('chat-messages').innerHTML = '';
+    return;
+  }
+  cliSessionId = session.session_id;
+  currentSessionProject = session.project;
+  const title = (session.ai_title || session.session_id.slice(0, 8) + '…').slice(0, 55);
+  document.getElementById('session-picker-label').textContent = title;
+  document.getElementById('chat-messages').innerHTML =
+    `<div class="px-4 py-2 text-xs text-gray-600 text-center border-b border-gray-800 mb-2">
+       Resuming: <span class="text-gray-400">${escHtml(title)}</span>
+       ${session.task_number ? `<span class="badge bg-orange-900 text-orange-300 ml-2">${escHtml(session.task_number)}</span>` : ''}
+     </div>`;
+}
+
+async function sendChat() {
+  if (chatStreaming) return;
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  chatStreaming = true;
+  document.getElementById('chat-send-btn').textContent = '…';
+  document.getElementById('chat-send-btn').disabled = true;
+
+  chatHistory.push({role: 'user', content: text});
+  appendChatMessage('user', text);
+
+  const container = document.getElementById('chat-messages');
+  const bubble = document.createElement('div');
+  bubble.className = 'flex gap-2';
+  bubble.innerHTML = `<div class="w-6 h-6 rounded-full bg-gray-700 text-xs flex items-center justify-center shrink-0 mt-1">A</div>
+    <div class="msg-assistant px-3 py-2 prose text-sm max-w-[85%] min-w-[40px]"><span class="text-gray-500 animate-pulse">Thinking…</span></div>`;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+  const msgDiv = bubble.querySelector('.msg-assistant');
+  let buffer = '';
+
+  try {
+    const model = document.getElementById('model-select').value;
+
+    if (chatMode === 'cli') {
+      // ── Claude CLI mode ──────────────────────────────────────────────────
+      const resp = await fetch('/api/chat/via-cli', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text, session_id: cliSessionId,
+                              project: currentSessionProject, model})
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        msgDiv.innerHTML = `<span class="text-red-400">${escHtml(err.detail || 'CLI error')}</span>`;
+        chatHistory.pop();
+      } else {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuf = '';
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          lineBuf += decoder.decode(value, {stream: true});
+          const lines = lineBuf.split('\n');
+          lineBuf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === 'text') {
+                buffer += evt.text;
+                msgDiv.innerHTML = renderMarkdown(buffer);
+                container.scrollTop = container.scrollHeight;
+              } else if (evt.type === 'done') {
+                if (evt.session_id) {
+                  cliSessionId = evt.session_id;
+                  // New session created in dashboard dir — no project needed for next resume
+                  if (!currentSessionProject) currentSessionProject = null;
+                }
+              } else if (evt.type === 'error') {
+                msgDiv.innerHTML += `<br><span class="text-red-400">${escHtml(evt.text || 'Error')}</span>`;
+              }
+            } catch {}
+          }
+        }
+        msgDiv.innerHTML = renderMarkdown(buffer);
+        await renderMermaid(msgDiv);
+        chatHistory.push({role: 'assistant', content: buffer});
+      }
+
+    } else {
+      // ── Direct Anthropic API mode ────────────────────────────────────────
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({messages: chatHistory, model})
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        msgDiv.innerHTML = `<span class="text-red-400">${escHtml(err.detail || 'Error')}</span>`;
+        chatHistory.pop();
+      } else {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let lineBuf = '';
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          lineBuf += decoder.decode(value, {stream: true});
+          const lines = lineBuf.split('\n');
+          lineBuf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+                buffer += evt.delta.text;
+                msgDiv.innerHTML = renderMarkdown(buffer);
+                container.scrollTop = container.scrollHeight;
+              } else if (evt.type === 'error') {
+                msgDiv.innerHTML += `<br><span class="text-red-400">${escHtml(evt.message || 'Stream error')}</span>`;
+              }
+            } catch {}
+          }
+        }
+        msgDiv.innerHTML = renderMarkdown(buffer);
+        await renderMermaid(msgDiv);
+        chatHistory.push({role: 'assistant', content: buffer});
+      }
+    }
+  } catch (e) {
+    msgDiv.innerHTML = `<span class="text-red-400">Error: ${escHtml(e.message)}</span>`;
+    chatHistory.pop();
+  }
+
+  chatStreaming = false;
+  document.getElementById('chat-send-btn').textContent = 'Send';
+  document.getElementById('chat-send-btn').disabled = false;
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendChatMessage(role, text) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'flex gap-2 justify-end';
+  div.innerHTML = `<div class="msg-user px-3 py-2 text-sm max-w-[85%] whitespace-pre-wrap">${escHtml(text)}</div>
+    <div class="w-6 h-6 rounded-full bg-blue-800 text-xs flex items-center justify-center shrink-0 mt-1">U</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderMarkdown(text) {
+  // Pre-process mermaid blocks: wrap in special div
+  const processed = text.replace(/```mermaid\n([\s\S]*?)```/g, (_, code) =>
+    `<pre class="mermaid">${escHtml(code.trim())}</pre>`);
+  const html = marked.parse(processed);
+  return DOMPurify.sanitize(html, {ADD_TAGS: ['pre'], ADD_ATTR: ['class']});
+}
+
+async function renderMermaid(container) {
+  const blocks = container.querySelectorAll('pre.mermaid');
+  for (const block of blocks) {
+    try {
+      const code = block.textContent;
+      const id = 'mermaid-' + Math.random().toString(36).slice(2);
+      const {svg} = await mermaid.render(id, code);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = svg;
+      block.replaceWith(wrapper);
+    } catch {}
+  }
+}
+
+// ── Databases Tab ──────────────────────────────────────────────────────────────
+let modalResolve = null;
+let odooInstalls = [];
+
+function openModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  document.getElementById('modal-version-row').classList.add('hidden');
+  document.getElementById('modal').classList.add('open');
+  return new Promise(res => { modalResolve = res; });
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); if (modalResolve) modalResolve(false); }
+function modalConfirm() { document.getElementById('modal').classList.remove('open'); if (modalResolve) modalResolve(true); }
+
+async function openSwitchModal(dbName, dbVersion) {
+  document.getElementById('modal-title').textContent = 'Switch Database';
+  document.getElementById('modal-body').textContent =
+    `Switch Odoo to "${dbName}" and restart? This will interrupt running processes.`;
+
+  const versionRow = document.getElementById('modal-version-row');
+  if (odooInstalls.length) {
+    const sel = document.getElementById('modal-odoo-version');
+    sel.innerHTML = odooInstalls.map(i =>
+      `<option value="${i.major}">${i.label} — ${i.dir}</option>`
+    ).join('');
+    // Auto-select version matching the DB
+    const match = odooInstalls.find(i => i.major === String(dbVersion));
+    if (match) sel.value = match.major;
+
+    const warnEl = document.getElementById('modal-version-warn');
+    if (dbVersion && !match) {
+      warnEl.textContent = `DB is Odoo ${dbVersion} but no matching install was found`;
+      warnEl.classList.remove('hidden');
+    } else if (dbVersion && sel.value !== String(dbVersion)) {
+      warnEl.textContent = `DB is Odoo ${dbVersion} but selected binary is ${sel.value}`;
+      warnEl.classList.remove('hidden');
+    } else {
+      warnEl.classList.add('hidden');
+    }
+    versionRow.classList.remove('hidden');
+  } else {
+    versionRow.classList.add('hidden');
+  }
+
+  document.getElementById('modal').classList.add('open');
+  return new Promise(res => { modalResolve = res; });
+}
+
+const PROFILE_COLORS = {ryt:'bg-blue-900 text-blue-300', std:'bg-purple-900 text-purple-300',
+  dk:'bg-teal-900 text-teal-300', dd:'bg-yellow-900 text-yellow-300', sme:'bg-pink-900 text-pink-300'};
+
+// Cache of db→version, populated lazily
+const dbVersionCache = {};
+let loadedProfileNames = ['ryt', 'std', 'dk', 'dd', 'sme'];
+
+async function loadDatabases() {
+  document.getElementById('db-grid').innerHTML = '<div class="col-span-3 text-center text-gray-500 py-8">Loading…</div>';
+  try {
+    const [dbResp, profResp, installResp, addonsResp] = await Promise.all([
+      fetch('/api/databases'), fetch('/api/db-profiles'),
+      fetch('/api/odoo/installations'), fetch('/api/addons-profiles')
+    ]);
+    const d = await dbResp.json();
+    const profiles = await profResp.json();
+    odooInstalls = await installResp.json();
+    const addonsProfiles = await addonsResp.json();
+    loadedProfileNames = Object.keys(addonsProfiles);
+    renderDatabases(d.databases, d.active_db, profiles);
+    refreshOdooStatus();
+    loadDbVersions(d.databases);
+  } catch (e) {
+    document.getElementById('db-grid').innerHTML = `<div class="col-span-3 text-center text-red-400 py-8">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadDbVersions(dbs) {
+  for (const db of dbs) {
+    if (dbVersionCache[db]) continue;
+    try {
+      const r = await fetch(`/api/databases/${db}/version`);
+      const data = await r.json();
+      if (data.version) {
+        dbVersionCache[db] = data.version;
+        const badge = document.getElementById(`ver-${db}`);
+        if (badge) {
+          badge.textContent = `v${data.version}`;
+          badge.classList.remove('hidden');
+          badge.className = `badge text-xs ${data.version === '14' ? 'bg-orange-900 text-orange-300' : 'bg-indigo-900 text-indigo-300'}`;
+        }
+      }
+    } catch {}
+  }
+}
+
+function renderDatabases(dbs, activeDb, profiles) {
+  if (!dbs.length) {
+    document.getElementById('db-grid').innerHTML = '<div class="col-span-3 text-center text-gray-500 py-8">No dv_* databases found.</div>';
+    return;
+  }
+  document.getElementById('db-grid').innerHTML = dbs.map(db => {
+    const isActive = db === activeDb;
+    const prof = profiles[db] || '';
+    const profColor = PROFILE_COLORS[prof] || 'bg-gray-700 text-gray-400';
+    const cached = dbVersionCache[db];
+    const verColor = cached === '14' ? 'bg-orange-900 text-orange-300' : 'bg-indigo-900 text-indigo-300';
+    const opts = ['', ...loadedProfileNames].map(p =>
+      `<option value="${p}"${p===prof?' selected':''}>${p || '(none)'}</option>`).join('');
+    return `<div class="db-card bg-gray-800 border-2 ${isActive ? 'active-db' : 'border-gray-700'} rounded-lg p-3 flex flex-col gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-mono text-sm font-semibold flex-1">${escHtml(db)}</span>
+        ${isActive ? '<span id="active-db-badge" class="badge bg-blue-900 text-blue-300 text-xs">In conf</span>' : ''}
+        <span id="ver-${db}" class="badge text-xs ${cached ? verColor : 'hidden'}">${cached ? 'v'+cached : ''}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-500">path:</span>
+        <select class="text-xs py-0 h-6 flex-1" onchange="saveDbProfile('${db}', this.value)" onclick="event.stopPropagation()">
+          ${opts}
+        </select>
+        ${prof ? `<span class="badge ${profColor} text-xs">${escHtml(prof)}</span>` : ''}
+      </div>
+      <button class="text-xs text-left text-gray-500 hover:text-blue-400" onclick="switchDb('${db}')">Switch →</button>
+    </div>`;
+  }).join('');
+}
+
+async function saveDbProfile(dbName, profile) {
+  try {
+    await fetch(`/api/db-profiles/${dbName}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({profile})
+    });
+    // Refresh to update badge colors
+    loadDatabases();
+  } catch (e) { alert(e.message); }
+}
+
+async function switchDb(dbName) {
+  const dbVersion = dbVersionCache[dbName] || '';
+  const confirmed = await openSwitchModal(dbName, dbVersion);
+  if (!confirmed) return;
+  const chosenVersion = document.getElementById('modal-odoo-version')?.value || null;
+
+  // Show spinner on all cards
+  document.getElementById('db-grid').querySelectorAll('.db-card').forEach(c => c.style.opacity = '0.5');
+
+  const dot = document.getElementById('odoo-dot');
+  const txt = document.getElementById('odoo-status-text');
+  dot.className = 'w-2 h-2 rounded-full dot-yellow';
+  txt.textContent = `Switching to ${dbName}…`;
+
+  try {
+    const r = await fetch('/api/databases/switch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({db_name: dbName, odoo_version: chosenVersion})
+    });
+    if (!r.ok) { const d = await r.json(); alert(d.detail || 'Switch failed'); loadDatabases(); return; }
+
+    // Poll until Odoo is running with new DB
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) { clearInterval(poll); loadDatabases(); return; }
+      try {
+        const sr = await fetch('/api/odoo/status');
+        const sd = await sr.json();
+        if (sd.running && sd.db === dbName) {
+          clearInterval(poll);
+          loadDatabases();
+          refreshOdooStatus();
+        }
+      } catch {}
+    }, 2000);
+  } catch (e) {
+    alert(e.message);
+    loadDatabases();
+  }
+}
+
+// ── Makefile Tab ───────────────────────────────────────────────────────────────
+async function loadMakeTargets() {
+  window._makeLoaded = true;
+  try {
+    const r = await fetch('/api/make/targets');
+    const groups = await r.json();
+    renderMakeTargets(groups);
+  } catch (e) {
+    document.getElementById('make-targets').innerHTML = `<div class="text-red-400">Error: ${e.message}</div>`;
+  }
+}
+
+function renderMakeTargets(groups) {
+  document.getElementById('make-targets').innerHTML = groups.map(group => `
+    <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+      <div class="px-3 py-2 bg-gray-750 border-b border-gray-700 font-medium text-sm text-gray-300">${escHtml(group.group)}</div>
+      <div class="divide-y divide-gray-700/50">
+        ${group.targets.map(t => renderTargetRow(t)).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderTargetRow(target) {
+  const paramInputs = target.params.map(p => {
+    const id = `param-${target.name}-${p.name}`;
+    if (p.type === 'select') {
+      const opts = p.options.map(o => `<option value="${o}"${o===p.default?' selected':''}>${o}</option>`).join('');
+      return `<span class="text-xs text-gray-500">${p.name}=</span><select id="${id}" class="text-xs py-0.5 px-1 h-7 min-w-[80px]">${opts}</select>`;
+    }
+    return `<span class="text-xs text-gray-500">${p.name}=</span><input type="text" id="${id}" placeholder="${escHtml(p.placeholder||'')}" value="${escHtml(p.default||'')}" class="text-xs py-0.5 w-24 h-7" ${p.required?'required':''}>`;
+  }).join('');
+
+  // These run interactively / indefinitely and can't stream over the dashboard — use a terminal
+  const TERMINAL_ONLY = new Set(['log', 'shell']);
+  const isTerminalOnly = TERMINAL_ONLY.has(target.name);
+  const isPrimary = target.name === 'update';
+  const btnClass = isPrimary
+    ? 'px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded text-xs font-semibold'
+    : 'px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs';
+
+  const action = isTerminalOnly
+    ? `<span class="text-xs text-gray-600 italic px-3 py-1" title="Runs indefinitely / needs a TTY — run in a terminal: make ${escHtml(target.name)}">terminal only</span>`
+    : `<button class="${btnClass}" onclick="runMakeTarget('${escHtml(target.name)}', ${JSON.stringify(target.params.map(p=>p.name))})">Run</button>`;
+
+  return `<div class="flex items-center gap-2 px-3 py-2 flex-wrap${isTerminalOnly ? ' opacity-60' : ''}">
+    <span class="font-mono text-sm font-medium w-28 shrink-0 text-gray-200">${escHtml(target.name)}</span>
+    <span class="text-xs text-gray-500 flex-1 min-w-[120px]">${escHtml(target.description)}</span>
+    ${paramInputs ? `<div class="flex items-center gap-1 flex-wrap">${paramInputs}</div>` : ''}
+    ${action}
+  </div>`;
+}
+
+async function runMakeTarget(targetName, paramNames) {
+  const params = {};
+  for (const name of paramNames) {
+    const el = document.getElementById(`param-${targetName}-${name}`);
+    if (el && el.value.trim()) params[name] = el.value.trim();
+  }
+
+  const outputEl = document.getElementById('make-output-text');
+  const headerEl = document.getElementById('make-output-header');
+  const scrollEl = document.getElementById('make-output-scroll');
+  outputEl.textContent = '';
+  headerEl.style.borderColor = '';
+
+  try {
+    const resp = await fetch('/api/make/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: targetName, params})
+    });
+
+    if (!resp.ok) {
+      const d = await resp.json();
+      outputEl.textContent = 'Error: ' + (d.detail || 'Unknown error');
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let lineBuffer = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      lineBuffer += decoder.decode(value, {stream: true});
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'start') {
+            document.getElementById('make-output-cmd').textContent = evt.cmd;
+          } else if (evt.type === 'output') {
+            outputEl.textContent += evt.text;
+            scrollEl.scrollTop = scrollEl.scrollHeight;
+          } else if (evt.type === 'done') {
+            const ok = evt.exit_code === 0;
+            headerEl.style.borderBottomColor = ok ? '#22c55e' : '#ef4444';
+            outputEl.textContent += `\n[exit ${evt.exit_code}]`;
+            scrollEl.scrollTop = scrollEl.scrollHeight;
+          } else if (evt.type === 'error') {
+            outputEl.textContent += '\nError: ' + evt.text;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    outputEl.textContent = 'Fetch error: ' + e.message;
+  }
+}
+
+function copyMakeOutput() {
+  navigator.clipboard.writeText(document.getElementById('make-output-text').textContent);
+}
+function clearMakeOutput() {
+  document.getElementById('make-output-text').textContent = 'Run a make target to see output here.';
+  document.getElementById('make-output-cmd').textContent = 'Output';
+  document.getElementById('make-output-header').style.borderBottomColor = '';
+}
+
+// ── Addons Profile Editor ──────────────────────────────────────────────────────
+let allProfiles = {};
+let currentEditProfile = '';
+
+async function openProfileModal() {
+  const r = await fetch('/api/addons-profiles');
+  allProfiles = await r.json();
+  renderProfileTabs();
+  const firstProfile = Object.keys(allProfiles)[0] || 'ryt';
+  selectProfileTab(firstProfile);
+  document.getElementById('profile-modal').style.display = 'flex';
+}
+
+function closeProfileModal() {
+  document.getElementById('profile-modal').style.display = 'none';
+}
+
+const BUILTIN_PROFILES = new Set(['ryt', 'std', 'dk', 'dd', 'sme']);
+
+function renderProfileTabs() {
+  const profileColors = {ryt:'text-blue-400', std:'text-purple-400', dk:'text-teal-400', dd:'text-yellow-400', sme:'text-pink-400'};
+  const tabs = Object.keys(allProfiles).map(name => {
+    const col = profileColors[name] || 'text-gray-300';
+    const isCustom = !BUILTIN_PROFILES.has(name);
+    return `<div class="flex items-center gap-1 group" id="ptab-row-${name}">
+      <button id="ptab-${name}" onclick="selectProfileTab('${escHtml(name)}')"
+        class="flex-1 text-left px-2 py-1.5 rounded text-sm font-mono ${col} hover:bg-gray-700">${escHtml(name)}</button>
+      ${isCustom ? `<button onclick="deleteProfile('${escHtml(name)}')" title="Delete"
+        class="hidden group-hover:block text-xs text-gray-600 hover:text-red-400 px-1">✕</button>` : ''}
+    </div>`;
+  }).join('');
+  document.getElementById('profile-tabs').innerHTML = tabs +
+    `<button onclick="createNewProfile()" id="new-profile-btn"
+      class="text-left px-2 py-1.5 rounded text-xs text-gray-400 hover:bg-gray-700 border border-dashed border-gray-600 mt-auto">+ New profile</button>`;
+}
+
+function selectProfileTab(name) {
+  currentEditProfile = name;
+  // Highlight active tab
+  document.querySelectorAll('[id^="ptab-"]').forEach(b => b.classList.remove('bg-gray-700', 'ring-1', 'ring-gray-500'));
+  const btn = document.getElementById('ptab-' + name);
+  if (btn) btn.classList.add('bg-gray-700', 'ring-1', 'ring-gray-500');
+
+  document.getElementById('profile-editor-title').textContent = name;
+  document.getElementById('profile-save-status').classList.add('hidden');
+  renderProfilePaths(allProfiles[name] || []);
+}
+
+function renderProfilePaths(paths) {
+  document.getElementById('profile-paths-list').innerHTML = paths.map((p, i) => `
+    <div class="flex items-center gap-2 group" id="path-row-${i}">
+      <span class="text-xs text-gray-500 w-4 text-right shrink-0">${i + 1}</span>
+      <input type="text" value="${escHtml(p)}" id="path-input-${i}"
+        class="flex-1 text-xs py-0.5 font-mono"
+        onchange="updateLocalPath(${i}, this.value)">
+      <button onclick="movePathUp(${i})" class="text-gray-600 hover:text-gray-300 text-xs ${i===0?'invisible':''}">↑</button>
+      <button onclick="movePathDown(${i})" class="text-gray-600 hover:text-gray-300 text-xs ${i===paths.length-1?'invisible':''}">↓</button>
+      <button onclick="removePath(${i})" class="text-gray-600 hover:text-red-400 text-xs">✕</button>
+    </div>`).join('');
+}
+
+function updateLocalPath(i, value) {
+  allProfiles[currentEditProfile][i] = value;
+}
+
+function movePathUp(i) {
+  const paths = allProfiles[currentEditProfile];
+  if (i === 0) return;
+  [paths[i-1], paths[i]] = [paths[i], paths[i-1]];
+  renderProfilePaths(paths);
+}
+
+function movePathDown(i) {
+  const paths = allProfiles[currentEditProfile];
+  if (i >= paths.length - 1) return;
+  [paths[i], paths[i+1]] = [paths[i+1], paths[i]];
+  renderProfilePaths(paths);
+}
+
+function removePath(i) {
+  allProfiles[currentEditProfile].splice(i, 1);
+  renderProfilePaths(allProfiles[currentEditProfile]);
+}
+
+function addProfilePath() {
+  const input = document.getElementById('new-path-input');
+  const val = input.value.trim();
+  if (!val) return;
+  allProfiles[currentEditProfile] = allProfiles[currentEditProfile] || [];
+  allProfiles[currentEditProfile].push(val);
+  renderProfilePaths(allProfiles[currentEditProfile]);
+  input.value = '';
+}
+
+async function saveCurrentProfile() {
+  const paths = allProfiles[currentEditProfile] || [];
+  const r = await fetch(`/api/addons-profiles/${currentEditProfile}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths})
+  });
+  if (r.ok) {
+    const status = document.getElementById('profile-save-status');
+    status.classList.remove('hidden');
+    setTimeout(() => status.classList.add('hidden'), 2000);
+  } else {
+    const d = await r.json();
+    alert(d.detail || 'Save failed');
+  }
+}
+
+function createNewProfile() {
+  if (document.getElementById('new-profile-input-row')) {
+    document.getElementById('new-profile-input').focus();
+    return;
+  }
+  const tabs = document.getElementById('profile-tabs');
+  const btn = document.getElementById('new-profile-btn');
+  const row = document.createElement('div');
+  row.id = 'new-profile-input-row';
+  row.className = 'flex flex-col gap-1 px-1 py-1';
+  row.innerHTML = `
+    <input type="text" id="new-profile-input" placeholder="profile name…"
+      class="text-xs py-0.5 w-full font-mono" maxlength="20" autocomplete="off"
+      onkeydown="if(event.key==='Enter')confirmNewProfile();if(event.key==='Escape')cancelNewProfile()">
+    <div class="flex gap-1">
+      <button onclick="confirmNewProfile()" class="text-xs px-2 py-0.5 bg-blue-700 hover:bg-blue-600 rounded flex-1">Add</button>
+      <button onclick="cancelNewProfile()" class="text-xs px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded">✕</button>
+    </div>`;
+  if (btn) tabs.insertBefore(row, btn); else tabs.appendChild(row);
+  document.getElementById('new-profile-input').focus();
+}
+
+function cancelNewProfile() {
+  document.getElementById('new-profile-input-row')?.remove();
+}
+
+function confirmNewProfile() {
+  const input = document.getElementById('new-profile-input');
+  if (!input) return;
+  const name = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!name) { input.focus(); return; }
+  cancelNewProfile();
+  if (allProfiles[name]) { selectProfileTab(name); return; }
+  allProfiles[name] = [];
+  renderProfileTabs();
+  selectProfileTab(name);
+}
+
+async function deleteProfile(name) {
+  if (!confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
+  const r = await fetch(`/api/addons-profiles/${name}`, {method: 'DELETE'});
+  if (r.ok) {
+    delete allProfiles[name];
+    renderProfileTabs();
+    const remaining = Object.keys(allProfiles);
+    if (remaining.length) selectProfileTab(remaining[0]);
+  } else {
+    const d = await r.json();
+    alert(d.detail || 'Delete failed');
+  }
+}
+
+async function resetProfileToDefault() {
+  const defaults = {
+    std: ['/home/server/odoo-17.0/addons','/home/server/odoo-17.0/std-odoo17c/std_bs_apps','/home/server/odoo-17.0/std-odoo17c/std_third_apps_free','/home/server/odoo-17.0/std-odoo17c/std_third_apps_license'],
+    ryt: ['/home/server/odoo-17.0/addons','/home/server/odoo-17.0/std-odoo17c/std_bs_apps','/home/server/odoo-17.0/std-odoo17c/std_third_apps_free','/home/server/odoo-17.0/std-odoo17c/std_third_apps_license','/home/server/odoo-17.0/ryt-odoo17c/spc_bs_apps','/home/server/odoo-17.0/ryt-odoo17c/spc_third_apps_free','/home/server/odoo-17.0/ryt-odoo17c/spc_third_apps_license'],
+    dk: ['/home/server/odoo-17.0/addons','/home/server/odoo-17.0/std-odoo17c/std_bs_apps','/home/server/odoo-17.0/std-odoo17c/std_third_apps_free','/home/server/odoo-17.0/std-odoo17c/std_third_apps_license','/home/server/odoo-17.0/dk-odoo17c/spc_bs_apps','/home/server/odoo-17.0/dk-odoo17c/spc_third_apps_free','/home/server/odoo-17.0/dk-odoo17c/spc_third_apps_license'],
+    dd: ['/home/server/odoo-17.0/addons','/home/server/odoo-17.0/std-odoo17c/std_bs_apps','/home/server/odoo-17.0/std-odoo17c/std_third_apps_free','/home/server/odoo-17.0/std-odoo17c/std_third_apps_license','/home/server/odoo-17.0/dd-odoo17c/std_bs_apps','/home/server/odoo-17.0/dd-odoo17c/std_third_apps_free','/home/server/odoo-17.0/dd-odoo17c/std_third_apps_license','/home/server/odoo-17.0/dd-odoo17c/spc_bs_apps','/home/server/odoo-17.0/dd-odoo17c/spc_third_apps_free','/home/server/odoo-17.0/dd-odoo17c/spc_third_apps_license'],
+    sme: ['/home/server/odoo-17.0/addons','/home/server/odoo-17.0/std-odoo17c/std_bs_apps','/home/server/odoo-17.0/std-odoo17c/std_third_apps_free','/home/server/odoo-17.0/std-odoo17c/std_third_apps_license','/home/server/odoo-17.0/sme-odoo17c/spc_bs_apps','/home/server/odoo-17.0/sme-odoo17c/spc_third_apps_free','/home/server/odoo-17.0/sme-odoo17c/spc_third_apps_license'],
+  };
+  if (defaults[currentEditProfile]) {
+    allProfiles[currentEditProfile] = [...defaults[currentEditProfile]];
+    renderProfilePaths(allProfiles[currentEditProfile]);
+  }
+}
+
+// ── LINE Log ───────────────────────────────────────────────────────────────────
+let lineLogReader = null;
+
+function toggleLineLog() {
+  const panel = document.getElementById('line-log-panel');
+  const isHidden = panel.classList.contains('hidden');
+  if (isHidden) {
+    panel.classList.remove('hidden');
+    restartLineLog();
+  } else {
+    panel.classList.add('hidden');
+    stopLineLog();
+  }
+}
+
+function stopLineLog() {
+  if (lineLogReader) { try { lineLogReader.cancel(); } catch {} lineLogReader = null; }
+}
+
+async function restartLineLog() {
+  stopLineLog();
+  const source = document.getElementById('line-log-source').value;
+  const el = document.getElementById('line-log-text');
+  const scroll = document.getElementById('line-log-scroll');
+  el.textContent = '';
+  try {
+    const resp = await fetch(`/api/line/log?source=${source}`);
+    const reader = resp.body.getReader();
+    lineLogReader = reader;
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.text) {
+            el.textContent += evt.text;
+            scroll.scrollTop = scroll.scrollHeight;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') el.textContent += `\n[Error: ${e.message}]`;
+  }
+}
+
+// ── Odoo Stop + Log ────────────────────────────────────────────────────────────
+let odooLogReader = null;
+
+function toggleOdooLog() {
+  const panel = document.getElementById('odoo-log-panel');
+  const isHidden = panel.classList.contains('hidden');
+  if (isHidden) {
+    panel.classList.remove('hidden');
+    restartOdooLog();
+  } else {
+    panel.classList.add('hidden');
+    stopOdooLog();
+  }
+}
+
+function stopOdooLog() {
+  if (odooLogReader) { try { odooLogReader.cancel(); } catch {} odooLogReader = null; }
+}
+
+async function restartOdooLog() {
+  stopOdooLog();
+  const el = document.getElementById('odoo-log-text');
+  const scroll = document.getElementById('odoo-log-scroll');
+  el.textContent = '';
+  try {
+    const resp = await fetch('/api/odoo/log');
+    const reader = resp.body.getReader();
+    odooLogReader = reader;
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.text) {
+            el.textContent += evt.text;
+            scroll.scrollTop = scroll.scrollHeight;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') el.textContent += `\n[Error: ${e.message}]`;
+  }
+}
+
+async function restartOdoo() {
+  const confirmed = await openModal('Restart Odoo', 'Restart the Odoo service? It will reload with the same database and config.');
+  if (!confirmed) return;
+  const dot = document.getElementById('odoo-dot');
+  const txt = document.getElementById('odoo-status-text');
+  const restartBtn = document.getElementById('restart-odoo-btn');
+  const stopBtn = document.getElementById('stop-odoo-btn');
+  dot.className = 'w-2 h-2 rounded-full dot-yellow';
+  txt.textContent = 'Restarting Odoo…';
+  if (restartBtn) restartBtn.disabled = true;
+  if (stopBtn) stopBtn.disabled = true;
+  try {
+    const r = await fetch('/api/odoo/restart', {method: 'POST'});
+    const d = await r.json();
+    if (d.status === 'not_running') {
+      refreshOdooStatus();
+      if (restartBtn) restartBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = false;
+      return;
+    }
+    // Poll: wait for it to stop, then wait for it to come back up
+    let phase = 'stopping';
+    const start = Date.now();
+    const poll = setInterval(async () => {
+      const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+      const st = await fetch('/api/odoo/status').then(x => x.json()).catch(() => null);
+      if (phase === 'stopping') {
+        txt.textContent = `Stopping… ${elapsed}s`;
+        if (st && !st.running) phase = 'starting';
+      } else {
+        txt.textContent = `Starting… ${elapsed}s`;
+        if (st && st.running) {
+          clearInterval(poll);
+          if (restartBtn) restartBtn.disabled = false;
+          if (stopBtn) stopBtn.disabled = false;
+          refreshOdooStatus();
+          loadDatabases();
+          return;
+        }
+      }
+      if (Date.now() - start > 40000) {
+        clearInterval(poll);
+        if (restartBtn) restartBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = false;
+        refreshOdooStatus();
+      }
+    }, 800);
+  } catch (e) {
+    alert(e.message);
+    refreshOdooStatus();
+    if (restartBtn) restartBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = false;
+  }
+}
+
+async function stopOdoo() {
+  const confirmed = await openModal('Stop Odoo', 'Stop the Odoo service? You can restart it by switching to a database.');
+  if (!confirmed) return;
+  const dot = document.getElementById('odoo-dot');
+  const txt = document.getElementById('odoo-status-text');
+  dot.className = 'w-2 h-2 rounded-full dot-yellow';
+  txt.textContent = 'Sending stop signal…';
+  const stopBtn = document.getElementById('stop-odoo-btn');
+  if (stopBtn) stopBtn.disabled = true;
+  try {
+    const r = await fetch('/api/odoo/stop', {method: 'POST'});
+    const d = await r.json();
+    if (d.status === 'not_running') {
+      refreshOdooStatus();
+      if (stopBtn) stopBtn.disabled = false;
+      return;
+    }
+    // Poll until process is gone (max 15s), showing elapsed time
+    txt.textContent = 'Stopping Odoo…';
+    const start = Date.now();
+    const poll = setInterval(async () => {
+      const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+      txt.textContent = `Stopping Odoo… ${elapsed}s`;
+      const st = await fetch('/api/odoo/status').then(x => x.json()).catch(() => null);
+      if (!st || !st.running) {
+        clearInterval(poll);
+        if (stopBtn) stopBtn.disabled = false;
+        refreshOdooStatus();
+        loadDatabases();
+      } else if (Date.now() - start > 12000) {
+        // Force-kill after 12s
+        clearInterval(poll);
+        txt.textContent = 'Force-killing…';
+        await fetch('/api/odoo/stop', {method: 'POST'}).catch(() => {});
+        setTimeout(() => { refreshOdooStatus(); loadDatabases(); if (stopBtn) stopBtn.disabled = false; }, 1500);
+      }
+    }, 600);
+  } catch (e) {
+    alert(e.message);
+    refreshOdooStatus();
+    if (stopBtn) stopBtn.disabled = false;
+  }
+}
+
+// ── Board Tab ──────────────────────────────────────────────────────────────────
+const TYPE_COLORS = { mermaid: 'bg-purple-700 text-purple-200', markdown: 'bg-blue-800 text-blue-200', table: 'bg-teal-800 text-teal-200' };
+const TYPE_LABELS = { mermaid: 'Mermaid', markdown: 'Markdown', table: 'Table' };
+
+async function loadBoard() {
+  const grid = document.getElementById('board-grid');
+  grid.innerHTML = '<div class="text-center text-gray-500 py-12 col-span-full">Loading…</div>';
+  const r = await fetch('/api/board');
+  const items = await r.json();
+  _boardItems = items;
+  if (!items.length) {
+    grid.innerHTML = '<div class="text-center text-gray-500 py-12 col-span-full">No explanations yet — click + New Explanation to add one.</div>';
+    return;
+  }
+  grid.innerHTML = items.map(item => `
+    <div class="bg-gray-800 border border-gray-700 rounded-xl flex flex-col overflow-hidden hover:border-gray-500 transition-colors">
+      <div class="flex items-start gap-2 px-4 pt-4 pb-2">
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-sm truncate">${escHtml(item.title)}</div>
+          ${item.task_number ? `<div class="text-xs text-orange-400 mt-0.5">📋 ${escHtml(item.task_number)}</div>` : ''}
+          ${item.session_title ? `<div class="text-xs text-gray-500 truncate mt-0.5">${escHtml(item.session_title)}</div>` : ''}
+        </div>
+        <span class="shrink-0 text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[item.content_type] || TYPE_COLORS.markdown}">${TYPE_LABELS[item.content_type] || item.content_type}</span>
+      </div>
+      <div class="px-4 pb-3 flex-1 overflow-hidden" style="max-height:160px">
+        ${item.content_type === 'mermaid'
+          ? `<pre class="text-xs text-purple-300 font-mono overflow-hidden" style="max-height:120px">${escHtml(item.content.slice(0, 300))}${item.content.length > 300 ? '…' : ''}</pre>`
+          : `<div class="text-xs text-gray-400 font-mono overflow-hidden" style="max-height:120px">${escHtml(item.content.slice(0, 400))}${item.content.length > 400 ? '…' : ''}</div>`}
+      </div>
+      <div class="flex items-center gap-2 px-4 py-2 border-t border-gray-700 bg-gray-900 shrink-0">
+        <span class="text-xs text-gray-600">${item.created_at ? item.created_at.slice(0,10) : ''}</span>
+        <button onclick="expandBoardItem(${item.id})" class="ml-auto text-xs text-blue-400 hover:text-blue-300">Expand</button>
+        <button onclick="openEditBoardModal(${item.id})" class="text-xs text-gray-400 hover:text-gray-200">Edit</button>
+        <button onclick="deleteBoardItem(${item.id})" class="text-xs text-gray-600 hover:text-red-400">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+let _boardItems = [];
+
+async function expandBoardItem(id) {
+  if (!_boardItems.length) {
+    const r = await fetch('/api/board');
+    _boardItems = await r.json();
+  }
+  const item = _boardItems.find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('board-expand-title').textContent = item.title;
+  const badge = document.getElementById('board-expand-type-badge');
+  badge.textContent = TYPE_LABELS[item.content_type] || item.content_type;
+  badge.className = 'text-xs px-2 py-0.5 rounded-full ' + (TYPE_COLORS[item.content_type] || TYPE_COLORS.markdown);
+  document.getElementById('board-expand-session').textContent = item.session_title ? '💬 ' + item.session_title : '';
+  document.getElementById('board-expand-task').textContent = item.task_number ? '📋 ' + item.task_number : '';
+  document.getElementById('board-expand-date').textContent = item.created_at ? item.created_at.slice(0,16).replace('T',' ') : '';
+  const cont = document.getElementById('board-expand-content');
+  if (item.content_type === 'mermaid') {
+    cont.innerHTML = `<pre class="mermaid">${escHtml(item.content)}</pre>`;
+    mermaid.run({ nodes: cont.querySelectorAll('.mermaid') });
+  } else {
+    cont.innerHTML = DOMPurify.sanitize(marked.parse(item.content));
+  }
+  document.getElementById('board-expand-modal').style.display = 'flex';
+}
+
+function closeBoardExpandModal() {
+  document.getElementById('board-expand-modal').style.display = 'none';
+}
+
+async function deleteBoardItem(id) {
+  if (!confirm('Delete this explanation?')) return;
+  await fetch('/api/board/' + id, { method: 'DELETE' });
+  _boardItems = _boardItems.filter(i => i.id !== id);
+  loadBoard();
+}
+
+let _editingBoardId = null;
+
+function openAddBoardModal() {
+  _editingBoardId = null;
+  document.getElementById('board-modal-title').textContent = 'New Explanation';
+  document.getElementById('board-new-title').value = '';
+  document.getElementById('board-new-task').value = '';
+  document.getElementById('board-new-content').value = '';
+  document.getElementById('board-new-type').value = 'mermaid';
+  document.getElementById('board-preview-wrap').classList.add('hidden');
+  updateBoardTypeHint();
+  document.getElementById('board-add-modal').style.display = 'flex';
+}
+
+function openEditBoardModal(id) {
+  const item = _boardItems.find(i => i.id === id);
+  if (!item) return;
+  _editingBoardId = id;
+  document.getElementById('board-modal-title').textContent = 'Edit Explanation';
+  document.getElementById('board-new-title').value = item.title || '';
+  document.getElementById('board-new-task').value = item.task_number || '';
+  document.getElementById('board-new-content').value = item.content || '';
+  document.getElementById('board-new-type').value = item.content_type === 'mermaid' ? 'mermaid' : 'markdown';
+  document.getElementById('board-preview-wrap').classList.add('hidden');
+  updateBoardTypeHint();
+  document.getElementById('board-add-modal').style.display = 'flex';
+}
+
+function closeBoardAddModal() {
+  document.getElementById('board-add-modal').style.display = 'none';
+  _editingBoardId = null;
+}
+
+function updateBoardTypeHint() {
+  const t = document.getElementById('board-new-type').value;
+  const hint = document.getElementById('board-type-hint');
+  hint.textContent = t === 'mermaid' ? '(flowchart TD, sequenceDiagram, classDiagram, erDiagram…)' : '(GitHub Flavored Markdown — tables, headings, lists…)';
+}
+
+function previewBoardContent() {
+  const type = document.getElementById('board-new-type').value;
+  const content = document.getElementById('board-new-content').value;
+  const wrap = document.getElementById('board-preview-wrap');
+  const cont = document.getElementById('board-preview-content');
+  wrap.classList.remove('hidden');
+  if (type === 'mermaid') {
+    const id = 'mermaid-prev-' + Date.now();
+    cont.innerHTML = `<pre class="mermaid" id="${id}">${escHtml(content)}</pre>`;
+    mermaid.run({ nodes: [cont.querySelector('.mermaid')] });
+  } else {
+    cont.innerHTML = DOMPurify.sanitize(marked.parse(content));
+  }
+}
+
+async function saveBoardItem() {
+  const title = document.getElementById('board-new-title').value.trim();
+  const content = document.getElementById('board-new-content').value.trim();
+  const content_type = document.getElementById('board-new-type').value;
+  const task_number = document.getElementById('board-new-task').value.trim();
+  if (!title) { alert('Please enter a title.'); return; }
+  if (!content) { alert('Please enter content.'); return; }
+  const editing = _editingBoardId !== null;
+  const r = await fetch(editing ? '/api/board/' + _editingBoardId : '/api/board', {
+    method: editing ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, content, content_type, task_number })
+  });
+  if (r.ok) {
+    closeBoardAddModal();
+    loadBoard();
+  } else {
+    alert('Save failed.');
+  }
+}
+
+// ── Utility ────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadSessions();
+</script>
+</body>
+</html>

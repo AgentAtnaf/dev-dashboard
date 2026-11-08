@@ -19,8 +19,6 @@ Usage:
   cli.py runs tag RUN_ID "why it is disposable"  # mark safe to delete (does NOT delete)
   cli.py runs untag RUN_ID                       # clear the tag
   cli.py runs tagged                             # what is tagged and how much it would free
-  cli.py flowviz save "Title" /path/to/viz.html [--db dv_xxx] [--session-id SID] [--task T26-XXXXX]
-  cli.py flowviz list                        # list all saved flow visuals
 """
 import sys
 import argparse
@@ -328,60 +326,6 @@ def cmd_odoo(args: list):
         sys.exit(1)
 
 
-def cmd_flowviz(args: list):
-    opts, args = _context_args(args)
-    subcommand = args[0] if args else "list"
-    if subcommand == "list":
-        req = urllib.request.Request(DASHBOARD_URL + "/api/flowvisuals", method="GET")
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                items = json.loads(resp.read())
-        except urllib.error.URLError as e:
-            print(f"[cli.py] Dashboard unreachable: {e}", file=sys.stderr)
-            return
-        if not items:
-            print("No flow visuals saved yet.")
-            return
-        print(f"{'ID':>4}  {'Title':<35} {'DB':<18} {'Task':<14} {'Created':<20}")
-        print("-" * 95)
-        for v in items:
-            created = (v.get("created_at") or "")[:16].replace("T", " ")
-            db = v.get("db_name") or "—"
-            task = v.get("task_number") or "—"
-            print(f"{v['id']:>4}  {v['title']:<35} {db:<18} {task:<14} {created}")
-    elif subcommand == "save":
-        # Parse: save "Title" /path [--db dv_xxx] [--session-id SID] [--task T26-XXXXX]
-        rest = args[1:]
-        if len(rest) < 2:
-            print('Usage: cli.py flowviz save "Title" /path/to/file.html [--db dv_xxx] [--session-id SID] [--task T26-XXXXX]', file=sys.stderr)
-            sys.exit(1)
-        title, path = rest[0], rest[1]
-        db_name, session_id, task_number = opts.db, opts.session_id, opts.task
-        if not os.path.exists(path):
-            print(f"[cli.py] File not found: {path}", file=sys.stderr)
-            sys.exit(1)
-        with open(path, "r", encoding="utf-8") as fh:
-            content = fh.read()
-        if not session_id:
-            session_id = _get_session_id() or ""
-        payload = {
-            "title": title,
-            "content": content,
-            "db_name": db_name,
-            "session_id": session_id,
-            "task_number": task_number,
-        }
-        result = _post("/api/flowvisuals", payload)
-        if result.get("ok"):
-            size_kb = len(content.encode()) / 1024
-            print(f"[cli.py] Saved flow visual '{title}' (id={result.get('id')}, {size_kb:.1f} KB)")
-        else:
-            print(f"[cli.py] Response: {result}")
-            sys.exit(1)
-    else:
-        print(f"Unknown flowviz subcommand: {subcommand}  (save|list)", file=sys.stderr)
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -397,8 +341,6 @@ if __name__ == "__main__":
         cmd_odoo(rest)
     elif command == "flow":
         cmd_flow(rest)
-    elif command == "flowviz":
-        cmd_flowviz(rest)
     elif command == "runs":
         cmd_runs(rest)
     else:

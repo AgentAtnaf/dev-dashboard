@@ -349,16 +349,6 @@ def init_db():
             created_at    TEXT,
             updated_at    TEXT
         );
-        CREATE TABLE IF NOT EXISTS flow_visuals (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            title         TEXT NOT NULL,
-            content       TEXT NOT NULL,
-            db_name       TEXT DEFAULT '',
-            session_id    TEXT DEFAULT '',
-            session_title TEXT DEFAULT '',
-            task_number   TEXT DEFAULT '',
-            created_at    TEXT
-        );
     """)
     if "db_name" not in {row[1] for row in conn.execute("PRAGMA table_info(flows)")}:
         conn.execute("ALTER TABLE flows ADD COLUMN db_name TEXT DEFAULT ''")
@@ -1527,76 +1517,6 @@ def get_run_artifact(run_id: str, kind: str):
         raise HTTPException(404, "Artifact not available")
     return FileResponse(str(path.resolve()), media_type="application/zip" if kind == "trace" else "text/plain",
                         filename=path.name)
-
-
-# ── Flow Visuals endpoints ─────────────────────────────────────────────────────
-class FlowVisualCreate(BaseModel):
-    title: str
-    content: str
-    db_name: str = ""
-    session_id: str = ""
-    session_title: str = ""
-    task_number: str = ""
-
-
-@app.get("/api/flowvisuals")
-def list_flow_visuals():
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT id, title, db_name, session_id, session_title, task_number, created_at "
-        "FROM flow_visuals ORDER BY created_at DESC"
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-@app.get("/api/flowvisuals/{item_id}")
-def get_flow_visual(item_id: int):
-    conn = get_db()
-    row = conn.execute("SELECT * FROM flow_visuals WHERE id=?", (item_id,)).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(404, "Flow visual not found")
-    return dict(row)
-
-
-@app.post("/api/flowvisuals")
-def create_flow_visual(body: FlowVisualCreate):
-    session_title = body.session_title
-    task_num = body.task_number
-    if body.session_id:
-        conn = get_db()
-        cache = conn.execute("SELECT ai_title FROM session_cache WHERE session_id=?",
-                             (body.session_id,)).fetchone()
-        task = conn.execute("SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
-                            (body.session_id,)).fetchone()
-        conn.close()
-        if cache and not session_title:
-            session_title = cache["ai_title"] or ""
-        if task and not task_num:
-            task_num = task["task_number"] or ""
-    conn = get_db()
-    cur = conn.execute(
-        "INSERT INTO flow_visuals(title, content, db_name, session_id, session_title, task_number, created_at) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (body.title, body.content, body.db_name, body.session_id,
-         session_title, task_num, datetime.now().isoformat(timespec="seconds")),
-    )
-    item_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return {"ok": True, "id": item_id}
-
-
-@app.delete("/api/flowvisuals/{item_id}")
-def delete_flow_visual(item_id: int):
-    conn = get_db()
-    result = conn.execute("DELETE FROM flow_visuals WHERE id=?", (item_id,))
-    conn.commit()
-    conn.close()
-    if result.rowcount == 0:
-        raise HTTPException(404, "Flow visual not found")
-    return {"ok": True}
 
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────

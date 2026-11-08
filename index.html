@@ -948,6 +948,12 @@ const $ = s => document.querySelector(s);
 const api = p => fetch(p).then(r => r.json());
 
 let RUNS = [], FILTER = 'all', Q = '', PAGE = 0;
+/* The search box lives in the global topbar, so it has to act on whatever
+   tab is open — it used to call renderRuns() unconditionally, which meant
+   typing in it did nothing anywhere except Flows. */
+let VIEW = 'flows';
+let DBROWS = [], DBACTIVE = null, SESSIONS = [];
+const hit = (...parts) => !Q || parts.filter(Boolean).join(' ').toLowerCase().includes(Q);
 const PAGE_SIZE = 20;
 
 /* ── Formatting ─────────────────────────────────────────────────────────── */
@@ -1088,17 +1094,25 @@ async function loadDbs() {
     .map(v => `<span class="vbadge v${v}" style="margin-right:5px">v${v}</span>`).join('') || '—';
 
   // Group by version — the badges were the real organising axis all along.
-  const rows = names.map((n, i) => ({ name: n, ver: vers[i], prof: profiles[n] || null }))
+  DBROWS = names.map((n, i) => ({ name: n, ver: vers[i], prof: profiles[n] || null }))
     .sort((a, b) => (b.ver || '').localeCompare(a.ver || '') || a.name.localeCompare(b.name));
+  DBACTIVE = active;
+  renderDbs();
+}
 
-  $('#dbs').innerHTML = rows.map(r => `
+function renderDbs() {
+  const active = DBACTIVE;
+  const rows = DBROWS.filter(r => hit(r.name, r.prof, r.ver && 'v' + r.ver));
+  $('#d-total').textContent = rows.length === DBROWS.length
+    ? DBROWS.length : `${rows.length} / ${DBROWS.length}`;
+  $('#dbs').innerHTML = rows.length ? rows.map(r => `
     <tr class="${r.name === active ? 'sel' : 'clickable'}" data-db="${esc(r.name)}">
       <td>${r.ver ? `<span class="vbadge v${r.ver}">v${r.ver}</span>` : '<span class="muted">—</span>'}</td>
       <td class="mono">${esc(r.name)}${r.name === active ? ' <span class="tag" style="background:rgba(1,181,116,.18);color:var(--vu-success-focus)">in conf</span>' : ''}</td>
       <td>${r.prof ? `<span class="vbadge" style="background:rgba(255,255,255,.08);color:var(--vu-grey-400)">${esc(r.prof)}</span>`
                    : '<span class="muted" style="font-size:11.5px">no profile</span>'}</td>
       <td class="num"><span class="muted" style="font-size:11.5px">${r.name === active ? '' : 'Switch →'}</span></td>
-    </tr>`).join('');
+    </tr>`).join('') : '<tr><td colspan="4"><div class="empty">No database matches that filter.</div></td></tr>';
 
   $('#dbs').querySelectorAll('tr.clickable').forEach(tr => {
     tr.onclick = () => switchDb(tr.dataset.db);
@@ -1127,8 +1141,6 @@ const ctx = k => ($('#ctx-' + k).value || '').trim();
 
 async function loadMake() {
   TARGETS = await api('/api/make/targets');
-  const n = TARGETS.reduce((a, g) => a + g.targets.length, 0);
-  $('#make-sub').textContent = `${n} targets in ${TARGETS.length} groups`;
 
   // Offer the real database list to the shared DB box.
   api('/api/databases').then(d => {
@@ -1136,7 +1148,19 @@ async function loadMake() {
     if (!ctx('DB')) $('#ctx-DB').value = d.active_db || '';
   }).catch(() => {});
 
-  $('#make-list').innerHTML = TARGETS.map(g => `
+  renderMake();
+}
+
+function renderMake() {
+  const groups = TARGETS
+    .map(g => ({ group: g.group, targets: g.targets.filter(t => hit(t.name, t.description, g.group)) }))
+    .filter(g => g.targets.length);
+  const shown = groups.reduce((a, g) => a + g.targets.length, 0);
+  const all = TARGETS.reduce((a, g) => a + g.targets.length, 0);
+  $('#make-sub').textContent = shown === all
+    ? `${all} targets in ${TARGETS.length} groups`
+    : `${shown} of ${all} targets`;
+  $('#make-list').innerHTML = groups.map(g => `
     <div class="tgroup">${esc(g.group)}</div>
     ${g.targets.map(t => {
       const shared = (t.params || []).filter(p => ['MOD', 'DB', 'PRJ'].includes(p.name));
@@ -1227,8 +1251,14 @@ try { marked.setOptions({ gfm: true, breaks: true }); } catch {}
 async function loadBoard() {
   const d = await api('/api/board');
   BOARD = Array.isArray(d) ? d : (d.items || []);
-  $('#board-sub').textContent = BOARD.length + ' saved';
-  $('#board-list').innerHTML = BOARD.map((b, i) => `
+  renderBoardList();
+}
+
+function renderBoardList() {
+  const list = BOARD.filter(b => hit(b.title, b.task_number, b.content_type, b.session_title));
+  $('#board-sub').textContent = list.length === BOARD.length
+    ? BOARD.length + ' saved' : `${list.length} of ${BOARD.length}`;
+  $('#board-list').innerHTML = list.length ? list.map((b, i) => `
     <div class="bitem" data-i="${i}">
       <div class="bt">${esc(b.title)}</div>
       <div class="bm">
@@ -1236,12 +1266,12 @@ async function loadBoard() {
         ${b.task_number ? `<span class="mono">${esc(b.task_number)}</span>` : ''}
         <span>${b.created_at ? new Date(b.created_at).toLocaleDateString() : ''}</span>
       </div>
-    </div>`).join('');
+    </div>`).join('') : '<div class="empty">Nothing matches that filter.</div>';
   $('#board-list').querySelectorAll('.bitem').forEach(el => {
     el.onclick = () => {
       $('#board-list').querySelectorAll('.bitem').forEach(x => x.classList.remove('sel'));
       el.classList.add('sel');
-      showBoard(BOARD[+el.dataset.i]);
+      showBoard(list[+el.dataset.i]);          // index into the filtered list
     };
   });
 }
@@ -1276,19 +1306,28 @@ async function showBoard(b) {
 /* ── Sessions ───────────────────────────────────────────────────────────── */
 async function loadSessions() {
   const d = await api('/api/sessions?limit=200');
-  const rows = Array.isArray(d) ? d : (d.sessions || []);
-  $('#sess-sub').textContent = rows.length + ' sessions';
-  $('#sessions').innerHTML = rows.map((r, i) => {
+  SESSIONS = Array.isArray(d) ? d : (d.sessions || []);
+  renderSessions();
+}
+
+function renderSessions() {
+  const rows = SESSIONS.filter(r => hit(
+    r.ai_title, r.project, r.date, r.task_number,
+    (r.tasks || []).map(t => t.task_number).join(' ')));
+  $('#sess-sub').textContent = rows.length === SESSIONS.length
+    ? SESSIONS.length + ' sessions' : `${rows.length} of ${SESSIONS.length}`;
+  $('#sessions').innerHTML = rows.length ? rows.map((r, i) => {
     const tasks = r.tasks || [];
-    return `<tr>
+    return `<tr data-i="${i}">
       <td class="mono muted">${esc(r.date || '')}</td>
       <td>${esc(r.ai_title || '(untitled)')}</td>
       <td class="muted">${esc(r.project || '—')}</td>
       <td><div class="taskcell" data-i="${i}">${taskChips(tasks, false)}</div></td>
     </tr>`;
-  }).join('');
+  }).join('') : '<tr><td colspan="4"><div class="empty">No session matches that filter.</div></td></tr>';
 
-  $('#sessions').querySelectorAll('tr').forEach((tr, i) => {
+  $('#sessions').querySelectorAll('tr[data-i]').forEach(tr => {
+    const i = +tr.dataset.i;
     tr.classList.add('clickable');
     tr.onclick = e => { if (!e.target.classList.contains('morebtn')) editSession(rows[i]); };
   });
@@ -1569,7 +1608,10 @@ document.querySelectorAll('.navitem').forEach(it => {
     document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
     $('#v-' + v).classList.add('on');
     $('#crumb').textContent = it.dataset.name || it.textContent.trim().split(/\s/)[0];
-    const once = (el, fn) => { if (!el.dataset.done) { el.dataset.done = 1; fn(); } };
+    VIEW = v;
+    $('#q').placeholder = PLACEHOLDER[v] || 'Filter…';
+    $('#q').setAttribute('aria-label', PLACEHOLDER[v] || 'Filter');
+    const once = (el, fn) => { if (!el.dataset.done) { el.dataset.done = 1; fn(); } else (RERENDER[v] || (() => {}))(); };
     if (v === 'databases') once($('#dbs'), loadDbs);
     if (v === 'make')      once($('#make-list'), loadMake);
     if (v === 'board')     once($('#board-list'), loadBoard);
@@ -1623,7 +1665,27 @@ bgTimer = setInterval(() => {
   fadeTo(ROTATION[bgIdx]);
 }, ROTATE_MS);
 
-$('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); PAGE = 0; renderRuns(); });
+/* One handler, dispatched by view. A missing entry would silently do
+   nothing, which is the bug this replaces, so every view has one. */
+const RERENDER = {
+  flows: () => { PAGE = 0; renderRuns(); },
+  databases: renderDbs,
+  make: renderMake,
+  board: renderBoardList,
+  sessions: renderSessions,
+};
+const PLACEHOLDER = {
+  flows: 'Filter flow, database, task…',
+  databases: 'Filter database, profile, version…',
+  make: 'Filter target or description…',
+  board: 'Filter title, task, type…',
+  sessions: 'Filter title, project, task, date…',
+};
+
+$('#q').addEventListener('input', e => {
+  Q = e.target.value.trim().toLowerCase();
+  (RERENDER[VIEW] || RERENDER.flows)();
+});
 $('#prev').onclick = () => goPage(-1);
 $('#next').onclick = () => goPage(1);
 addEventListener('keydown', e => {

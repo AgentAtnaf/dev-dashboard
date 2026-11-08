@@ -325,8 +325,14 @@
 :root[data-theme="glass"] table.dense thead th {
   text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6);
 }
-/* The sticky header still needs to be opaque — rows scroll under it. */
-:root[data-theme="glass"] { --head-bg: rgba(10,10,14,.88); }
+/* The header was near-opaque because rows scrolled under it and would have
+   shown through. Paging at 20 rows removes the scrolling, so it can be glass
+   like everything else.
+
+   Not fully transparent though: 20 rows is a page, but a 900px-tall window
+   only shows about 18 of them, so a couple still travel under the header.
+   .62 hides them without turning the bar back into a black slab. */
+:root[data-theme="glass"] { --head-bg: rgba(10,10,14,.62); }
 /* Zebra the rows very slightly so the eye keeps the line over busy areas. */
 :root[data-theme="glass"] table.dense tbody tr:nth-child(even) td {
   background: rgba(255,255,255,.028);
@@ -548,6 +554,14 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; 
   padding: 6px 9px; font: inherit; font-size: 12px; cursor: pointer; outline: 0;
 }
 #bgpick option { background: #10132b; color: #fff; }
+/* The incoming image during a rotation. z-index -1 puts it above the body's
+   own background and below the app, so backdrop-filter still samples it —
+   the glass refracts the new photo as it arrives rather than after. */
+.bgfade {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  opacity: 0; transition: opacity 1.1s ease;
+}
 .search svg { width: 14px; height: 14px; stroke: var(--vu-grey-500); fill: none; stroke-width: 2; }
 
 /* ── Stat row ──────────────────────────────────────────────────────────── */
@@ -629,6 +643,21 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .drawer .acts { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 
+.pager {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 9px 16px; border-top: 1px solid rgba(255,255,255,.07);
+  font-size: 12px; color: var(--vu-text); flex: none;
+}
+.pbtn {
+  width: 28px; height: 26px; line-height: 1; cursor: pointer;
+  font-family: inherit; font-size: 15px; font-weight: 700;
+  color: var(--vu-text-focus); background: rgba(255,255,255,.07);
+  border: 1px solid var(--vu-border-navbar); border-radius: 8px;
+  corner-shape: squircle;
+}
+.pbtn:hover:not(:disabled) { background: rgba(255,255,255,.16); }
+.pbtn:disabled { opacity: .3; cursor: default; }
+#pageinfo { font-variant-numeric: tabular-nums; min-width: 190px; text-align: center; }
 .empty { padding: 40px; text-align: center; color: var(--vu-grey-500); font-size: 13px; }
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 14px; }
 .view.on { display: flex; }
@@ -722,6 +751,7 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
       <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
       <div class="grow"></div>
       <select id="bgpick" title="Backdrop">
+        <option value="auto">Auto · rotate</option>
         <option value="bg7">7 · Tall trees ▲</option>
         <option value="bg1">1 · Misty ridge</option>
         <option value="bg2">2 · Fog &amp; conifers</option>
@@ -778,6 +808,11 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
             <tbody id="runs"><tr><td colspan="6"><div class="empty">Loading…</div></td></tr></tbody>
           </table>
         </div>
+        <div class="pager">
+          <button class="pbtn" id="prev" title="Previous page">‹</button>
+          <span id="pageinfo">—</span>
+          <button class="pbtn" id="next" title="Next page">›</button>
+        </div>
       </div>
     </div>
 
@@ -832,7 +867,8 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 const $ = s => document.querySelector(s);
 const api = p => fetch(p).then(r => r.json());
 
-let RUNS = [], FILTER = 'all', Q = '';
+let RUNS = [], FILTER = 'all', Q = '', PAGE = 0;
+const PAGE_SIZE = 20;
 
 /* ── Formatting ─────────────────────────────────────────────────────────── */
 const dur = ms => ms == null ? '—' : ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(1) + ' s';
@@ -889,10 +925,22 @@ function visibleRuns() {
 }
 
 function renderRuns() {
-  const rows = visibleRuns();
-  $('#shown').textContent = rows.length === RUNS.length
+  const all = visibleRuns();
+  const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  PAGE = Math.min(PAGE, pages - 1);                    // a filter can shrink the list
+  const from = PAGE * PAGE_SIZE;
+  const rows = all.slice(from, from + PAGE_SIZE);
+
+  $('#shown').textContent = all.length === RUNS.length
     ? RUNS.length + ' loaded'
-    : rows.length + ' of ' + RUNS.length + ' loaded';
+    : all.length + ' of ' + RUNS.length + ' loaded';
+
+  $('#pageinfo').textContent = all.length
+    ? `${from + 1}\u2013${from + rows.length} of ${all.length}   ·   page ${PAGE + 1}/${pages}`
+    : 'nothing to show';
+  $('#prev').disabled = PAGE === 0;
+  $('#next').disabled = PAGE >= pages - 1;
+
   $('#runs').innerHTML = rows.length ? rows.map((r, i) => `
     <tr data-i="${i}">
       <td><span class="st ${stCls(r.status)}"><span class="d"></span><span class="g">${stGly(r.status)}</span>${esc(r.status || 'unknown')}</span></td>
@@ -907,10 +955,12 @@ function renderRuns() {
     tr.onclick = () => {
       $('#runs').querySelectorAll('tr').forEach(x => x.classList.remove('sel'));
       tr.classList.add('sel');
-      openDrawer(rows[+tr.dataset.i]);
+      openDrawer(rows[+tr.dataset.i]);               // index is page-local
     };
   });
 }
+
+const goPage = d => { PAGE += d; renderRuns(); $('.tscroll').scrollTop = 0; };
 
 /* ── Drawer ─────────────────────────────────────────────────────────────── */
 function openDrawer(r) {
@@ -1004,6 +1054,7 @@ document.querySelectorAll('#filters .chip').forEach(c => {
     document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
     c.classList.add('on');
     FILTER = c.dataset.f;
+    PAGE = 0;
     renderRuns();
   };
 });
@@ -1024,18 +1075,63 @@ try {
 // Backdrop picker. Writing --bg-photo inline on :root overrides the theme's
 // own value, so switching needs no stylesheet surgery.
 const bg = $('#bgpick');
+// The accretion disc is deliberately not in the rotation — it is a different
+// register from the forests and reads as a mistake when it comes round.
+const ROTATION = ['bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bg7'];
+const ROTATE_MS = 45000;
+let bgTimer = null, bgIdx = ROTATION.indexOf('bg7');
+
 const applyBg = v => document.documentElement.style.setProperty(
   '--bg-photo', v ? `url('/static/bg/${v}.jpg')` : 'none');
+
+/* Crossfade rather than swap. Decoding happens before anything is shown, so
+   a slow image delays the change instead of flashing an empty frame. */
+function fadeTo(name) {
+  const img = new Image();
+  img.onload = () => {
+    const layer = document.createElement('div');
+    layer.className = 'bgfade';
+    layer.style.backgroundImage = `url('/static/bg/${name}.jpg')`;
+    document.body.appendChild(layer);
+    requestAnimationFrame(() => { layer.style.opacity = '1'; });
+    setTimeout(() => { applyBg(name); layer.remove(); }, 1200);
+  };
+  img.onerror = () => applyBg(name);     // worst case, swap without the fade
+  img.src = `/static/bg/${name}.jpg`;
+}
+
+function stopRotate() { clearInterval(bgTimer); bgTimer = null; }
+function startRotate() {
+  stopRotate();
+  bgTimer = setInterval(() => {
+    bgIdx = (bgIdx + 1) % ROTATION.length;
+    fadeTo(ROTATION[bgIdx]);
+  }, ROTATE_MS);
+}
+
+function selectBg(v) {
+  if (v === 'auto') { applyBg(ROTATION[bgIdx]); startRotate(); }
+  else { stopRotate(); applyBg(v); }
+}
+
 bg.onchange = () => {
-  applyBg(bg.value);
+  selectBg(bg.value);
   try { localStorage.setItem('vision-lab-bg', bg.value); } catch {}
 };
 try {
   const saved = localStorage.getItem('vision-lab-bg');
-  if (saved !== null) { bg.value = saved; applyBg(saved); }
-} catch {}
+  bg.value = saved === null ? 'auto' : saved;
+} catch { bg.value = 'auto'; }
+selectBg(bg.value);
 
-$('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); renderRuns(); });
+$('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); PAGE = 0; renderRuns(); });
+$('#prev').onclick = () => goPage(-1);
+$('#next').onclick = () => goPage(1);
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowLeft'  && !$('#prev').disabled) goPage(-1);
+  if (e.key === 'ArrowRight' && !$('#next').disabled) goPage(1);
+});
 addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
 loadRuns();

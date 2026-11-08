@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vision Lab</title>
+<style>
+/* ──────────────────────────────────────────────────────────────────────────
+   Vision UI shell, dense inner components.
+
+   Tokens below are lifted from the real Vision UI React theme source
+   (assets/theme/base/colors.js + borders.js + typography.js), not matched by
+   eye from a screenshot.
+
+   Where this deliberately departs from Vision UI: every inner component.
+   Vision UI is built for a marketing dashboard — six airy rows, 20px radii,
+   60px row heights. This dashboard shows 1,304 runs and 28 databases. Adopting
+   its component density verbatim would show you less per screen than today.
+   So: its shell and its material, our density.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/static/fonts/plus-jakarta-sans.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* ── Vision UI palette ─────────────────────────────────────────────────── */
+  --vu-body: #030c1d;
+  --vu-secondary: #0f1535;
+  --vu-sidenav-btn: #1a1f37;
+
+  --vu-brand: #0075ff;
+  --vu-brand-focus: #3993fe;
+  --vu-primary: #4318ff;
+  --vu-primary-focus: #9f7aea;
+
+  --vu-success: #01b574;
+  --vu-success-focus: #35d28a;
+  --vu-warning: #ffb547;
+  --vu-error: #e31a1a;
+  --vu-error-focus: #ee5d50;
+
+  --vu-text: #a0aec0;
+  --vu-text-focus: #ffffff;
+  --vu-border: #56577a;
+  --vu-border-navbar: rgba(226, 232, 240, .3);
+
+  --vu-grey-400: #a0aec0;
+  --vu-grey-500: #718096;
+  --vu-grey-600: #4a5568;
+  --vu-grey-700: #2d3748;
+
+  /* ── Vision UI gradients, verbatim angles and stops ────────────────────── */
+  --g-cover:  linear-gradient(159.02deg, #0f123b 14.25%, #090d2e 56.45%, #020515 86.14%);
+  --g-card:   linear-gradient(127.09deg, rgba(6,11,40,.94) 19.41%, rgba(10,14,35,.49) 76.65%);
+  --g-box:    linear-gradient(126.97deg, rgba(6,11,40,.74) 28.26%, rgba(10,14,35,.71) 91.2%);
+  --g-navbar: linear-gradient(123.64deg, rgba(255,255,255,0) -22.38%, rgba(255,255,255,.039) 70.38%);
+  --g-menu:   linear-gradient(126.97deg, #05153f 28.26%, #072561 91.2%);
+  --g-primary: linear-gradient(97.89deg, #4318ff 0%, #9f7aea 100%);
+  /* The signature detail: a 1px border brightest at the middle, fading out. */
+  --g-border: radial-gradient(94.43% 69.43% at 50% 50%, rgba(255,255,255,.38) 0%, rgba(255,255,255,0) 100%);
+
+  /* ── Radii, from borders.js ────────────────────────────────────────────── */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-btn: 12px;
+  --r-lg: 15px;
+  --r-xl: 20px;
+
+  /* ── Our density scale. This part is not Vision UI. ────────────────────── */
+  --row-h: 34px;
+  --font-ui: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --sidebar-w: 244px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--vu-text-focus);
+  background: var(--g-cover) fixed, var(--vu-body);
+  overflow: hidden;
+}
+
+/* ── The card material ─────────────────────────────────────────────────────
+   Two background layers: the card gradient clipped to the padding box, and
+   the radial white gradient clipped to the border box. That paints a 1px
+   border that is bright in the middle and fades at the corners — the thing
+   that makes Vision UI read as Vision UI. */
+.vcard {
+  border: 1px solid transparent;
+  border-radius: var(--r-xl);
+  background-image: var(--g-card), var(--g-border);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  backdrop-filter: blur(60px);
+}
+.vbox {
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background-image: var(--g-box), var(--g-border);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  backdrop-filter: blur(30px);
+}
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+.app { display: flex; height: 100vh; padding: 14px; gap: 14px; }
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+aside.nav {
+  width: var(--sidebar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 14px;
+}
+.brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 16px; }
+.brand .mark {
+  width: 26px; height: 26px; border-radius: 9px;
+  background: var(--g-primary);
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 800;
+}
+.brand span { font-weight: 700; font-size: 14.5px; letter-spacing: -.01em; }
+.nav hr { border: 0; height: 1px; margin: 0 0 14px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent); }
+
+.navitem {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 10px; margin-bottom: 5px;
+  border-radius: var(--r-btn);
+  cursor: pointer; color: var(--vu-text);
+  font-size: 13.5px; font-weight: 500;
+  border: 1px solid transparent;
+  transition: background .14s, color .14s;
+}
+.navitem .tile {
+  width: 28px; height: 28px; flex: none;
+  border-radius: var(--r-btn);
+  background: var(--vu-sidenav-btn);
+  display: grid; place-items: center;
+  transition: background .14s;
+}
+.navitem .tile svg { width: 14px; height: 14px; fill: none; stroke: var(--vu-text); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.navitem:hover { color: var(--vu-text-focus); background: rgba(255,255,255,.04); }
+.navitem.on {
+  color: var(--vu-text-focus); font-weight: 700;
+  background-image: var(--g-card), var(--g-border);
+  background-origin: border-box; background-clip: padding-box, border-box;
+}
+.navitem.on .tile { background: var(--vu-brand); }
+.navitem.on .tile svg { stroke: #fff; }
+.navitem .count { margin-left: auto; font-size: 11px; color: var(--vu-grey-500); font-variant-numeric: tabular-nums; }
+
+/* Odoo state, promoted out of the corner. It is the thing you most often
+   open this dashboard to check. */
+.odoo-state { margin-top: auto; padding: 13px; border-radius: var(--r-lg); background: var(--g-menu); }
+.odoo-state .lbl { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+.odoo-state .val { display: flex; align-items: center; gap: 8px; margin: 7px 0 11px; font-weight: 700; font-size: 14px; }
+.odoo-state .db { font-family: var(--font-mono); font-size: 11.5px; color: var(--vu-grey-400); font-weight: 400; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot.up { background: var(--vu-success); box-shadow: 0 0 0 3px rgba(1,181,116,.22); }
+.dot.down { background: var(--vu-grey-600); }
+.btn {
+  border: 0; cursor: pointer; font-family: inherit; font-weight: 700; font-size: 12px;
+  padding: 8px 12px; border-radius: var(--r-btn); color: #fff; width: 100%;
+  background: var(--g-primary);
+}
+.btn.ghost { background: rgba(255,255,255,.08); border: 1px solid var(--vu-border-navbar); }
+
+/* ── Main column ───────────────────────────────────────────────────────── */
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 16px; border-radius: var(--r-lg);
+  background-image: var(--g-navbar), var(--g-border);
+  background-origin: border-box; background-clip: padding-box, border-box;
+  border: 1px solid transparent;
+  backdrop-filter: blur(20px);
+}
+.crumb { font-size: 11.5px; color: var(--vu-text); }
+.crumb b { color: var(--vu-text-focus); font-size: 15px; display: block; margin-top: 1px; font-weight: 700; letter-spacing: -.01em; }
+.grow { flex: 1; }
+.search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--vu-secondary); border: 1px solid var(--vu-border-navbar);
+  border-radius: var(--r-btn); padding: 7px 12px; width: 260px;
+}
+.search input { background: none; border: 0; outline: 0; color: #fff; font-family: inherit; font-size: 13px; width: 100%; }
+.search input::placeholder { color: var(--vu-grey-500); }
+.search svg { width: 14px; height: 14px; stroke: var(--vu-grey-500); fill: none; stroke-width: 2; }
+
+/* ── Stat row ──────────────────────────────────────────────────────────── */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.stat { padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+.stat .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--vu-text); white-space: nowrap; }
+.stat .v { font-size: 20px; font-weight: 700; letter-spacing: -.02em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 11.5px; font-weight: 500; color: var(--vu-text); margin-left: 5px; letter-spacing: 0; }
+.stat .icon { margin-left: auto; width: 40px; height: 40px; border-radius: var(--r-btn); background: var(--g-primary); display: grid; place-items: center; flex: none; }
+.stat .icon svg { width: 17px; height: 17px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── Panel + dense table ───────────────────────────────────────────────── */
+.panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.panel > header { display: flex; align-items: center; gap: 10px; padding: 14px 18px 12px; }
+.panel > header h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.panel > header .sub { font-size: 11.5px; color: var(--vu-text); }
+
+.chips { display: flex; gap: 6px; }
+.chip {
+  font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  color: var(--vu-text); background: rgba(255,255,255,.05); border: 1px solid transparent;
+}
+.chip.on { color: #fff; background: var(--vu-brand); }
+
+.tscroll { flex: 1; min-height: 0; overflow: auto; }
+table.dense { width: 100%; border-collapse: collapse; }
+table.dense thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: #0b1030;
+  text-align: left; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--vu-grey-500); font-weight: 700;
+  padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.08);
+  white-space: nowrap;
+}
+table.dense tbody td {
+  padding: 0 10px; height: var(--row-h);
+  border-bottom: 1px solid rgba(255,255,255,.045);
+  font-size: 12.5px; white-space: nowrap;
+}
+table.dense tbody tr { cursor: pointer; }
+table.dense tbody tr:hover td { background: rgba(255,255,255,.045); }
+table.dense tbody tr.sel td { background: rgba(0,117,255,.16); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+.muted { color: var(--vu-text); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Status as a dot plus a word. A full pill per row, as Vision UI would do,
+   costs ~90px of horizontal space 1,304 times over and reads no faster. */
+.st { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12px; }
+.st .d { width: 7px; height: 7px; border-radius: 50%; }
+.st.pass { color: var(--vu-success-focus); } .st.pass .d { background: var(--vu-success); }
+.st.fail { color: var(--vu-error-focus); }   .st.fail .d { background: var(--vu-error-focus); }
+.st.unk  { color: var(--vu-grey-500); }      .st.unk .d  { background: var(--vu-grey-600); }
+
+.tag { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: rgba(255,181,71,.16); color: var(--vu-warning); }
+.vbadge { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: var(--r-sm); font-family: var(--font-mono); }
+.v14 { background: rgba(255,181,71,.16); color: var(--vu-warning); }
+.v17 { background: rgba(0,117,255,.18); color: #6fb1ff; }
+.v19 { background: rgba(159,122,234,.2); color: var(--vu-primary-focus); }
+
+/* ── Detail drawer ─────────────────────────────────────────────────────────
+   An overlay, not a third column. The old layout reserved ~40% of the width
+   for a pane that said "select a run" until you did. */
+.drawer {
+  position: fixed; top: 14px; right: 14px; bottom: 14px; width: 400px;
+  padding: 18px; overflow-y: auto; z-index: 40;
+  transform: translateX(calc(100% + 20px));
+  transition: transform .26s cubic-bezier(.4, 0, .2, 1);
+}
+.drawer.open { transform: none; }
+.drawer h3 { margin: 0 0 3px; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.drawer .close { position: absolute; top: 14px; right: 16px; cursor: pointer; color: var(--vu-grey-500); font-size: 18px; line-height: 1; }
+.kv { display: grid; grid-template-columns: 96px 1fr; gap: 7px 12px; margin: 16px 0; font-size: 12.5px; }
+.kv dt { color: var(--vu-grey-500); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.drawer .acts { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+
+.empty { padding: 40px; text-align: center; color: var(--vu-grey-500); font-size: 13px; }
+.view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 14px; }
+.view.on { display: flex; }
+
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside class="nav vcard">
+    <div class="brand"><div class="mark">D</div><span>Dev Dashboard</span></div>
+    <hr>
+
+    <div class="navitem on" data-view="flows">
+      <div class="tile"><svg viewBox="0 0 24 24"><path d="M5 4v6a3 3 0 003 3h8"/><circle cx="5" cy="3" r="2"/><circle cx="19" cy="13" r="2"/><circle cx="5" cy="19" r="2"/><path d="M5 13v4"/></svg></div>
+      Flows <span class="count" id="n-flows">—</span>
+    </div>
+    <div class="navitem" data-view="databases">
+      <div class="tile"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg></div>
+      Databases <span class="count" id="n-dbs">—</span>
+    </div>
+    <div class="navitem" data-view="soon" data-name="Make">
+      <div class="tile"><svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
+      Make
+    </div>
+    <div class="navitem" data-view="soon" data-name="Board">
+      <div class="tile"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+      Board
+    </div>
+    <div class="navitem" data-view="soon" data-name="Sessions">
+      <div class="tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      Sessions
+    </div>
+
+    <div class="odoo-state">
+      <div class="lbl">Odoo server</div>
+      <div class="val"><span class="dot down" id="odoo-dot"></span><span id="odoo-txt">checking…</span></div>
+      <div class="db" id="odoo-db">—</div>
+      <button class="btn" style="margin-top:11px" id="odoo-btn">Start Odoo</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main>
+    <div class="topbar">
+      <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
+      <div class="grow"></div>
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" placeholder="Filter flow, database, task…">
+      </div>
+    </div>
+
+    <!-- ── Flows view ────────────────────────────────────────────────────── -->
+    <div class="view on" id="v-flows">
+      <div class="stats">
+        <div class="stat vcard"><div><div class="k">Total runs</div><div class="v" id="s-total">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h5v5"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">Pass rate</div><div class="v" id="s-rate">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">Reclaimable</div><div class="v" id="s-tag">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">Last run</div><div class="v" id="s-last">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div></div>
+      </div>
+
+      <div class="panel vcard">
+        <header>
+          <h2>Run history</h2>
+          <span class="sub" id="shown">—</span>
+          <div class="grow"></div>
+          <div class="chips">
+            <div class="chip on" data-f="all">All</div>
+            <div class="chip" data-f="failed">Failed</div>
+            <div class="chip" data-f="passed">Passed</div>
+            <div class="chip" data-f="tagged">Tagged</div>
+          </div>
+        </header>
+        <div class="tscroll">
+          <table class="dense">
+            <thead><tr>
+              <th style="width:104px">Status</th><th>Flow</th><th style="width:132px">Database</th>
+              <th style="width:104px">Task</th><th style="width:84px" class="num">Duration</th><th style="width:150px">When</th>
+            </tr></thead>
+            <tbody id="runs"><tr><td colspan="6"><div class="empty">Loading…</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Databases view ────────────────────────────────────────────────── -->
+    <div class="view" id="v-databases">
+      <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+        <div class="stat vcard"><div><div class="k">Active database</div><div class="v mono" id="d-active" style="font-size:15px">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">Total</div><div class="v" id="d-total">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">By version</div><div class="v" id="d-ver" style="font-size:14px">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div></div>
+        <div class="stat vcard"><div><div class="k">Odoo</div><div class="v" id="d-state" style="font-size:15px">—</div></div>
+          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 6.5a8 8 0 1011 0"/></svg></div></div>
+      </div>
+
+      <div class="panel vcard">
+        <header>
+          <h2>PostgreSQL databases</h2>
+          <span class="sub">Click a row to switch Odoo's active database</span>
+        </header>
+        <div class="tscroll">
+          <table class="dense">
+            <thead><tr>
+              <th style="width:44px">Ver</th><th>Database</th><th style="width:150px">Addons profile</th><th style="width:120px"></th>
+            </tr></thead>
+            <tbody id="dbs"><tr><td colspan="4"><div class="empty">Loading…</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="v-soon">
+      <div class="panel vcard"><div class="empty" id="soon-txt">Not rebuilt in this prototype yet.</div></div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Run detail drawer ───────────────────────────────────────────────────── -->
+<div class="drawer vcard" id="drawer">
+  <div class="close" onclick="closeDrawer()">✕</div>
+  <h3 id="dr-name">—</h3>
+  <div class="st" id="dr-status"><span class="d"></span><span></span></div>
+  <dl class="kv" id="dr-kv"></dl>
+  <div class="acts">
+    <button class="btn" id="dr-trace">Open trace</button>
+    <button class="btn ghost" id="dr-tag">Tag safe to delete</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = p => fetch(p).then(r => r.json());
+
+let RUNS = [], FILTER = 'all', Q = '';
+
+/* ── Formatting ─────────────────────────────────────────────────────────── */
+const dur = ms => ms == null ? '—' : ms < 1000 ? ms + ' ms' : (ms / 1000).toFixed(1) + ' s';
+const ago = iso => {
+  if (!iso) return '—';
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  const d = Math.floor(s / 86400);
+  return d < 30 ? d + 'd ago' : new Date(iso).toLocaleDateString();
+};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const stCls = s => s === 'passed' ? 'pass' : s === 'failed' ? 'fail' : 'unk';
+
+/* ── Flows ──────────────────────────────────────────────────────────────── */
+async function loadRuns() {
+  const d = await api('/api/flow-runs?limit=200');   // server caps limit at 200
+  RUNS = d.runs || [];
+  $('#s-total').innerHTML = (d.total ?? RUNS.length).toLocaleString();
+  $('#n-flows').textContent = (d.total ?? RUNS.length).toLocaleString();
+
+  const known = RUNS.filter(r => r.status === 'passed' || r.status === 'failed');
+  const pass = known.filter(r => r.status === 'passed').length;
+  $('#s-rate').innerHTML = known.length
+    ? Math.round(100 * pass / known.length) + '%<small>last ' + known.length + '</small>'
+    : '—';
+  $('#s-last').innerHTML = RUNS.length ? ago(RUNS[0].started_at) : '—';
+
+  try {
+    const t = await api('/api/flow-runs/tagged');
+    // Two different numbers live here and they are easy to confuse: `runs` is
+    // everything ever tagged (109), `pending_count` is what still has a trace
+    // on disk (1). Only the second one is actionable, so it is the headline.
+    const mb = t.reclaimable_bytes ? (t.reclaimable_bytes / 1048576).toFixed(1) : '0';
+    $('#s-tag').innerHTML = (t.pending_count ?? 0) + '<small>' + mb + ' MB · '
+      + (t.runs || []).length + ' tagged</small>';
+  } catch { $('#s-tag').textContent = '—'; }
+
+  renderRuns();
+}
+
+function visibleRuns() {
+  return RUNS.filter(r => {
+    if (FILTER === 'passed' && r.status !== 'passed') return false;
+    if (FILTER === 'failed' && r.status !== 'failed') return false;
+    if (FILTER === 'tagged' && !r.safe_to_delete) return false;
+    if (!Q) return true;
+    const hay = (r.flow_name + ' ' + r.db_name + ' ' + r.task_number).toLowerCase();
+    return hay.includes(Q);
+  });
+}
+
+function renderRuns() {
+  const rows = visibleRuns();
+  $('#shown').textContent = rows.length === RUNS.length
+    ? RUNS.length + ' loaded'
+    : rows.length + ' of ' + RUNS.length + ' loaded';
+  $('#runs').innerHTML = rows.length ? rows.map((r, i) => `
+    <tr data-i="${i}">
+      <td><span class="st ${stCls(r.status)}"><span class="d"></span>${esc(r.status || 'unknown')}</span></td>
+      <td class="mono">${esc(r.flow_name)}${r.safe_to_delete ? ' <span class="tag">safe to delete</span>' : ''}</td>
+      <td class="mono muted">${esc(r.db_name || '—')}</td>
+      <td class="mono muted">${esc(r.task_number || '—')}</td>
+      <td class="num muted">${dur(r.duration_ms)}</td>
+      <td class="muted">${ago(r.started_at)}</td>
+    </tr>`).join('') : '<tr><td colspan="6"><div class="empty">Nothing matches that filter.</div></td></tr>';
+
+  $('#runs').querySelectorAll('tr[data-i]').forEach(tr => {
+    tr.onclick = () => {
+      $('#runs').querySelectorAll('tr').forEach(x => x.classList.remove('sel'));
+      tr.classList.add('sel');
+      openDrawer(rows[+tr.dataset.i]);
+    };
+  });
+}
+
+/* ── Drawer ─────────────────────────────────────────────────────────────── */
+function openDrawer(r) {
+  $('#dr-name').textContent = r.flow_name;
+  const s = $('#dr-status');
+  s.className = 'st ' + stCls(r.status);
+  s.lastElementChild.textContent = r.status || 'unknown';
+  $('#dr-kv').innerHTML = `
+    <dt>Database</dt><dd class="mono">${esc(r.db_name || '—')}</dd>
+    <dt>Task</dt><dd class="mono">${esc(r.task_number || '—')}</dd>
+    <dt>Duration</dt><dd>${dur(r.duration_ms)}</dd>
+    <dt>Started</dt><dd>${r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</dd>
+    <dt>Run id</dt><dd class="mono" style="font-size:11px">${esc(r.run_id)}</dd>
+    <dt>Trace</dt><dd>${r.trace_purged_at ? 'purged' : 'available'}</dd>
+    ${r.note ? `<dt>Note</dt><dd>${esc(r.note)}</dd>` : ''}`;
+  $('#dr-tag').textContent = r.safe_to_delete ? 'Remove safe-to-delete tag' : 'Tag safe to delete';
+  $('#drawer').classList.add('open');
+}
+const closeDrawer = () => $('#drawer').classList.remove('open');
+
+/* ── Databases ──────────────────────────────────────────────────────────── */
+async function loadDbs() {
+  const d = await api('/api/databases');
+  const names = d.databases || [];
+  const active = d.active_db;
+  $('#d-total').textContent = names.length;
+  $('#n-dbs').textContent = names.length;
+  $('#d-active').textContent = active || '—';
+
+  // Versions come one request per database; fire them together. The
+  // profile map arrives in a single request alongside.
+  const [vers, profiles] = await Promise.all([
+    Promise.all(names.map(n =>
+      api('/api/databases/' + encodeURIComponent(n) + '/version')
+        .then(v => v.version || v.odoo_version || null).catch(() => null))),
+    api('/api/db-profiles').catch(() => ({})),
+  ]);
+
+  const tally = {};
+  vers.forEach(v => { if (v) tally[v] = (tally[v] || 0) + 1; });
+  $('#d-ver').innerHTML = Object.keys(tally).sort().reverse()
+    .map(v => `<span class="vbadge v${v}" style="margin-right:5px">v${v}</span>`).join('') || '—';
+
+  // Group by version — the badges were the real organising axis all along.
+  const rows = names.map((n, i) => ({ name: n, ver: vers[i], prof: profiles[n] || null }))
+    .sort((a, b) => (b.ver || '').localeCompare(a.ver || '') || a.name.localeCompare(b.name));
+
+  $('#dbs').innerHTML = rows.map(r => `
+    <tr class="${r.name === active ? 'sel' : ''}">
+      <td>${r.ver ? `<span class="vbadge v${r.ver}">v${r.ver}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="mono">${esc(r.name)}${r.name === active ? ' <span class="tag" style="background:rgba(1,181,116,.18);color:var(--vu-success-focus)">in conf</span>' : ''}</td>
+      <td>${r.prof ? `<span class="vbadge" style="background:rgba(255,255,255,.08);color:var(--vu-grey-400)">${esc(r.prof)}</span>`
+                   : '<span class="muted" style="font-size:11.5px">no profile</span>'}</td>
+      <td class="num"><span class="muted" style="font-size:11.5px">${r.name === active ? '' : 'Switch →'}</span></td>
+    </tr>`).join('');
+}
+
+/* ── Odoo state ─────────────────────────────────────────────────────────── */
+async function loadOdoo() {
+  try {
+    const s = await api('/api/odoo/status');
+    const up = !!(s.running ?? s.is_running);
+    $('#odoo-dot').className = 'dot ' + (up ? 'up' : 'down');
+    $('#odoo-txt').textContent = up ? 'Running' : 'Not running';
+    $('#odoo-db').textContent = s.db || s.database || s.active_db || '';
+    $('#odoo-btn').textContent = up ? 'Stop Odoo' : 'Start Odoo';
+    $('#d-state').textContent = up ? 'Running' : 'Stopped';
+  } catch {
+    $('#odoo-txt').textContent = 'unknown';
+  }
+}
+
+/* ── Nav ────────────────────────────────────────────────────────────────── */
+document.querySelectorAll('.navitem').forEach(it => {
+  it.onclick = () => {
+    document.querySelectorAll('.navitem').forEach(x => x.classList.remove('on'));
+    it.classList.add('on');
+    const v = it.dataset.view;
+    document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
+    $('#v-' + v).classList.add('on');
+    $('#crumb').textContent = it.dataset.name || it.textContent.trim().split(/\s/)[0];
+    if (v === 'soon') $('#soon-txt').textContent = (it.dataset.name || 'This tab') + ' is not rebuilt in this prototype yet.';
+    if (v === 'databases' && !$('#dbs').dataset.done) { $('#dbs').dataset.done = 1; loadDbs(); }
+    closeDrawer();
+  };
+});
+
+document.querySelectorAll('.chip').forEach(c => {
+  c.onclick = () => {
+    document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+    c.classList.add('on');
+    FILTER = c.dataset.f;
+    renderRuns();
+  };
+});
+
+$('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); renderRuns(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+loadRuns();
+loadOdoo();
+// Cheap enough to fill the sidebar count before the tab is ever opened.
+api('/api/databases').then(d => { $('#n-dbs').textContent = (d.databases || []).length; }).catch(() => {});
+</script>
+</body>
+</html>

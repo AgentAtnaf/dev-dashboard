@@ -325,14 +325,23 @@
 :root[data-theme="glass"] table.dense thead th {
   text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6);
 }
-/* The header was near-opaque because rows scrolled under it and would have
-   shown through. Paging at 20 rows removes the scrolling, so it can be glass
-   like everything else.
+/* The header row was the last black thing on the page, and no alpha fixes
+   it: over a dark photograph even .42 composites to near-black, because the
+   photo behind it is already dark. The background is not the problem — the
+   need for one is.
 
-   Not fully transparent though: 20 rows is a page, but a 900px-tall window
-   only shows about 18 of them, so a couple still travel under the header.
-   .62 hides them without turning the bar back into a black slab. */
-:root[data-theme="glass"] { --head-bg: rgba(10,10,14,.62); }
+   It was opaque only because it was sticky, and sticky means rows travel
+   underneath and would show through. At 20 rows a page about two rows ever
+   scroll, so sticky was buying almost nothing and costing the whole look.
+   Dropping it lets the background go to zero: the header is now type on the
+   same glass as everything else, separated by a rule and letterspacing
+   rather than by a slab. */
+:root[data-theme="glass"] table.dense thead th {
+  position: static;
+  background: transparent;
+  border-bottom: 1px solid rgba(255,255,255,.22);
+  color: var(--vu-grey-400);
+}
 /* Zebra the rows very slightly so the eye keeps the line over busy areas. */
 :root[data-theme="glass"] table.dense tbody tr:nth-child(even) td {
   background: rgba(255,255,255,.028);

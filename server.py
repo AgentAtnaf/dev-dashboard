@@ -1547,6 +1547,12 @@ _VENDOR_DIR = os.path.join(DASHBOARD_DIR, "vendor")
 if os.path.isdir(_VENDOR_DIR):
     app.mount("/vendor", StaticFiles(directory=_VENDOR_DIR), name="vendor")
 
+# Our own front-end assets (styles.css, app.js, …). A mount rather than a route
+# per file, because the redesign keeps adding to this directory.
+_STATIC_DIR = os.path.join(DASHBOARD_DIR, "static")
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -307,7 +307,30 @@
   background-color: rgba(255,255,255,.1);
   border-color: rgba(255,255,255,.2);
 }
-:root[data-theme="glass"] .panel .tscroll { background: rgba(8,8,11,.82); }
+/* The run table shows the photograph too. The .82 scrim that used to sit
+   here made the busiest panel on the page read as a black box while every
+   other surface was glass, which is the opposite of the point.
+
+   Dropping it to .40 is only safe because bg7 is dark to begin with (mean
+   luminance 42) — the conditioner's whole job. On a bright backdrop this
+   number has to come back up, so it is tied to the image, not a constant.
+
+   The text-shadow is the insurance. Contrast ratios are computed against a
+   flat background, but a photograph is not flat: a trunk edge passing under
+   a glyph is a local contrast failure the average never sees. A 1px dark
+   shadow puts a dark halo behind every glyph so each one carries its own
+   background with it. */
+:root[data-theme="glass"] .panel .tscroll { background: rgba(8,8,11,.4); }
+:root[data-theme="glass"] table.dense tbody td,
+:root[data-theme="glass"] table.dense thead th {
+  text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.6);
+}
+/* The sticky header still needs to be opaque — rows scroll under it. */
+:root[data-theme="glass"] { --head-bg: rgba(10,10,14,.88); }
+/* Zebra the rows very slightly so the eye keeps the line over busy areas. */
+:root[data-theme="glass"] table.dense tbody tr:nth-child(even) td {
+  background: rgba(255,255,255,.028);
+}
 :root[data-theme="glass"] .navitem,
 :root[data-theme="glass"] .chip,
 :root[data-theme="glass"] .btn,

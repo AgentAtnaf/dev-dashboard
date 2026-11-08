@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vision Lab</title>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<script src="/vendor/mermaid.min.js"></script>
 <style>
 /* ──────────────────────────────────────────────────────────────────────────
    Vision UI shell, dense inner components.
@@ -697,6 +700,83 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 .pbtn:hover:not(:disabled) { background: rgba(255,255,255,.16); }
 .pbtn:disabled { opacity: .3; cursor: default; }
 #pageinfo { font-variant-numeric: tabular-nums; min-width: 190px; text-align: center; }
+.split { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.split > .panel { min-width: 0; }
+
+/* ── Make ────────────────────────────────────────────────────────────────
+   One context bar instead of a MOD= and DB= box on every single row. The
+   old tab repeated those inputs fifteen times; they are one thing, so they
+   are one control, and each target declares which of them it consumes. */
+.ctxbar { display: flex; gap: 16px; flex-wrap: wrap; padding: 2px 18px 15px; }
+.ctxbar label { display: flex; align-items: center; gap: 8px; font-size: 10.5px;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--vu-grey-500); font-weight: 700; }
+.ctxbar input, .ctxbar select { width: 158px; font-family: var(--font-mono); font-size: 12.5px; }
+.tgroup { padding: 13px 18px 5px; font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--vu-grey-500); font-weight: 700; }
+.trow { display: flex; align-items: center; gap: 10px; padding: 6px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.05); }
+.trow:hover { background: rgba(255,255,255,.05); }
+.trow .tn { font-family: var(--font-mono); font-size: 12.5px; width: 122px; flex: none; }
+.trow .tdesc { font-size: 12px; color: var(--vu-text); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow input { width: 92px; font-size: 12px; font-family: var(--font-mono); padding: 4px 7px; }
+.uses { display: flex; gap: 4px; flex: none; }
+.useschip { font-size: 9.5px; font-weight: 800; letter-spacing: .04em; padding: 2px 5px;
+  border-radius: 5px; background: rgba(255,255,255,.1); color: var(--vu-grey-400);
+  font-family: var(--font-mono); }
+.useschip.missing { background: rgba(255,69,58,.22); color: #ff9d96; }
+.runbtn { flex: none; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  padding: 4px 12px; border-radius: 8px; corner-shape: squircle; color: var(--vu-text-focus);
+  background: rgba(255,255,255,.1); border: 1px solid var(--vu-border-navbar); }
+.runbtn:hover { background: rgba(255,255,255,.2); }
+.outwrap { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; }
+pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; color: var(--vu-grey-400); }
+
+/* ── Board ───────────────────────────────────────────────────────────────
+   A list beside the content, not a grid of cards. These average 4,700
+   characters; at card size every one truncated mid-sentence, so the grid
+   showed you titles and forced a click to read anything at all. */
+.blist { flex: 1; min-height: 0; overflow-y: auto; }
+.bitem { padding: 9px 15px; border-bottom: 1px solid rgba(255,255,255,.05); cursor: pointer; }
+.bitem:hover { background: rgba(255,255,255,.05); }
+.bitem.sel { background: var(--sel-bg); }
+.bitem .bt { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.bitem .bm { display: flex; gap: 8px; align-items: center; margin-top: 4px;
+  font-size: 10.5px; color: var(--vu-grey-500); }
+.kind { font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 999px;
+  letter-spacing: .05em; text-transform: uppercase; }
+.kind.markdown { background: rgba(255,255,255,.11); color: #cfd5e6; }
+.kind.mermaid  { background: rgba(255,255,255,.2);  color: #fff; }
+.bcontent { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 28px; }
+.prose { font-size: 13px; line-height: 1.62; }
+.prose table { border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+.prose th, .prose td { border: 1px solid rgba(255,255,255,.14); padding: 5px 10px; text-align: left; }
+.prose th { background: rgba(255,255,255,.08); font-weight: 700; }
+.prose code { background: rgba(255,255,255,.1); padding: 1px 5px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: .88em; }
+.prose pre { background: rgba(0,0,0,.42); padding: 11px 13px; border-radius: 10px; overflow-x: auto; }
+.prose pre code { background: none; padding: 0; }
+.prose h1, .prose h2, .prose h3 { font-weight: 700; margin: 16px 0 7px; line-height: 1.3; }
+.prose h1 { font-size: 1.3em; } .prose h2 { font-size: 1.15em; } .prose h3 { font-size: 1.02em; }
+.prose ul, .prose ol { padding-left: 1.4em; margin: 7px 0; }
+.prose blockquote { border-left: 2px solid rgba(255,255,255,.25); padding-left: 12px;
+  color: var(--vu-text); margin: 9px 0; }
+.prose svg { max-width: 100%; height: auto; }
+/* Mermaid sized these with the page font; do not restyle them afterwards
+   or measurement and rendering disagree again. */
+.prose svg text { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+
+/* ── Sessions ────────────────────────────────────────────────────────────
+   One session here carries 53 task numbers. Stacked, that is a single table
+   row roughly 1,800px tall; eight sessions have more than three. So tasks
+   collapse to the first plus a count, and expand on click. */
+.taskcell { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.tasktag { font-size: 10px; font-weight: 700; font-family: var(--font-mono);
+  padding: 2px 7px; border-radius: 999px; background: rgba(255,255,255,.11); color: #d4d9e8; }
+.morebtn { font-size: 10px; font-weight: 700; color: var(--vu-grey-400); cursor: pointer;
+  background: none; border: 0; font-family: inherit; padding: 2px 4px; }
+.morebtn:hover { color: #fff; }
 .empty { padding: 40px; text-align: center; color: var(--vu-grey-500); font-size: 13px; }
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 14px; }
 .view.on { display: flex; }
@@ -763,15 +843,15 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
       <div class="tile"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg></div>
       Databases <span class="count" id="n-dbs">—</span>
     </div>
-    <div class="navitem" data-view="soon" data-name="Make">
+    <div class="navitem" data-view="make">
       <div class="tile"><svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
       Make
     </div>
-    <div class="navitem" data-view="soon" data-name="Board">
+    <div class="navitem" data-view="board">
       <div class="tile"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
       Board
     </div>
-    <div class="navitem" data-view="soon" data-name="Sessions">
+    <div class="navitem" data-view="sessions">
       <div class="tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
       Sessions
     </div>
@@ -884,8 +964,61 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
       </div>
     </div>
 
-    <div class="view" id="v-soon">
-      <div class="panel vcard"><div class="empty" id="soon-txt">Not rebuilt in this prototype yet.</div></div>
+    <!-- ── Make ──────────────────────────────────────────────────────── -->
+    <div class="view" id="v-make">
+      <div class="panel vcard" style="flex:none">
+        <header><h2>Context</h2><span class="sub">Shared by every target — set once, not per row</span></header>
+        <div class="ctxbar">
+          <label>MOD <input id="ctx-MOD" placeholder="bs_xyz"></label>
+          <label>DB <input id="ctx-DB" placeholder="dv_ryt" list="dblist"></label>
+          <label>PRJ <input id="ctx-PRJ" placeholder="ryt"></label>
+          <datalist id="dblist"></datalist>
+        </div>
+      </div>
+      <div class="split">
+        <div class="panel vcard" style="flex:1.25">
+          <header><h2>Targets</h2><span class="sub" id="make-sub">—</span></header>
+          <div class="tscroll" id="make-list"></div>
+        </div>
+        <div class="panel vcard" style="flex:1">
+          <header><h2>Output</h2><span class="sub" id="make-status">idle</span>
+            <div class="grow"></div>
+            <button class="runbtn" id="make-clear">Clear</button></header>
+          <div class="outwrap"><pre class="out" id="make-out">Run a target to see output here.</pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Board ─────────────────────────────────────────────────────── -->
+    <div class="view" id="v-board">
+      <div class="split">
+        <div class="panel vcard" style="flex:0 0 330px">
+          <header><h2>Explanations</h2><span class="sub" id="board-sub">—</span></header>
+          <div class="blist" id="board-list"></div>
+        </div>
+        <div class="panel vcard">
+          <header><h2 id="board-title">Select an explanation</h2><span class="sub" id="board-meta"></span></header>
+          <div class="bcontent"><div class="prose" id="board-body">
+            <div class="empty">74 saved explanations. Pick one on the left.</div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sessions ──────────────────────────────────────────────────── -->
+    <div class="view" id="v-sessions">
+      <div class="panel vcard">
+        <header><h2>Sessions</h2><span class="sub" id="sess-sub">—</span></header>
+        <div class="tscroll">
+          <table class="dense">
+            <thead><tr>
+              <th style="width:132px">Date</th><th>Title</th>
+              <th style="width:104px">Project</th><th style="width:300px">Tasks</th>
+            </tr></thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </main>
 </div>
@@ -1073,6 +1206,192 @@ async function loadOdoo() {
   }
 }
 
+
+/* ── Make ───────────────────────────────────────────────────────────────── */
+let TARGETS = [];
+const ctx = k => ($('#ctx-' + k).value || '').trim();
+
+async function loadMake() {
+  TARGETS = await api('/api/make/targets');
+  const n = TARGETS.reduce((a, g) => a + g.targets.length, 0);
+  $('#make-sub').textContent = `${n} targets in ${TARGETS.length} groups`;
+
+  // Offer the real database list to the shared DB box.
+  api('/api/databases').then(d => {
+    $('#dblist').innerHTML = (d.databases || []).map(x => `<option value="${esc(x)}">`).join('');
+    if (!ctx('DB')) $('#ctx-DB').value = d.active_db || '';
+  }).catch(() => {});
+
+  $('#make-list').innerHTML = TARGETS.map(g => `
+    <div class="tgroup">${esc(g.group)}</div>
+    ${g.targets.map(t => {
+      const shared = (t.params || []).filter(p => ['MOD', 'DB', 'PRJ'].includes(p.name));
+      const own    = (t.params || []).filter(p => !['MOD', 'DB', 'PRJ'].includes(p.name));
+      return `<div class="trow" data-t="${esc(t.name)}">
+        <span class="tn">${esc(t.name)}</span>
+        <span class="tdesc">${esc(t.description || '')}</span>
+        <span class="uses">${shared.map(p => `<span class="useschip" data-need="${p.required ? 1 : 0}" data-k="${p.name}">${p.name}</span>`).join('')}</span>
+        ${own.map(p => `<input data-p="${p.name}" placeholder="${esc(p.placeholder || p.name)}" title="${p.name}">`).join('')}
+        <button class="runbtn">Run</button>
+      </div>`;
+    }).join('')}`).join('');
+
+  $('#make-list').querySelectorAll('.trow').forEach(row => {
+    row.querySelector('.runbtn').onclick = () => runTarget(row);
+  });
+  refreshUses();
+}
+
+/* Mark a shared param red on any target that needs it while it is empty, so
+   the context bar explains itself instead of failing at run time. */
+function refreshUses() {
+  document.querySelectorAll('#make-list .useschip').forEach(c => {
+    const needed = c.dataset.need === '1';
+    c.classList.toggle('missing', needed && !ctx(c.dataset.k));
+  });
+}
+['MOD', 'DB', 'PRJ'].forEach(k =>
+  document.addEventListener('input', e => { if (e.target.id === 'ctx-' + k) refreshUses(); }));
+
+async function runTarget(row) {
+  const name = row.dataset.t;
+  const params = {};
+  row.querySelectorAll('.useschip').forEach(c => { const v = ctx(c.dataset.k); if (v) params[c.dataset.k] = v; });
+  row.querySelectorAll('input[data-p]').forEach(i => { if (i.value.trim()) params[i.dataset.p] = i.value.trim(); });
+
+  const missing = [...row.querySelectorAll('.useschip.missing')].map(c => c.dataset.k);
+  if (missing.length) { $('#make-out').textContent = `${name}: set ${missing.join(' and ')} in the context bar first.`; return; }
+
+  const out = $('#make-out');
+  out.textContent = `$ make ${name}` + Object.entries(params).map(([k, v]) => ` ${k}=${v}`).join('') + '\n\n';
+  $('#make-status').textContent = 'running ' + name + '…';
+
+  try {
+    const res = await fetch('/api/make/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: name, params }),
+    });
+    if (!res.ok) { out.textContent += `HTTP ${res.status}: ${await res.text()}`; $('#make-status').textContent = 'failed'; return; }
+    // The endpoint streams, so append as it arrives rather than awaiting the end.
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out.textContent += dec.decode(value, { stream: true });
+      out.parentElement.scrollTop = out.parentElement.scrollHeight;
+    }
+    $('#make-status').textContent = 'done';
+  } catch (e) {
+    out.textContent += '\n' + e;
+    $('#make-status').textContent = 'error';
+  }
+}
+$('#make-clear').onclick = () => { $('#make-out').textContent = 'Run a target to see output here.'; $('#make-status').textContent = 'idle'; };
+
+/* ── Board ──────────────────────────────────────────────────────────────── */
+let BOARD = [], mermaidSeq = 0;
+try {
+  mermaid.initialize({
+    startOnLoad: false, theme: 'dark',
+    /* Labels stay as SVG text. HTML labels wrap more gracefully, but they
+       live in a foreignObject whose inner HTML this build of DOMPurify
+       strips — which rendered every node as an empty coloured box. Keeping
+       the sanitiser intact matters more than the wrapping.
+
+       The clipping that started this was not mermaid's fault: it measures
+       labels with its own fontFamily, then the SVG inherits the page's
+       Plus Jakarta Sans, which is wider, so text outgrew boxes sized for a
+       narrower face. Telling mermaid the real font makes measurement and
+       rendering agree. */
+    securityLevel: 'strict',
+    fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif",
+    flowchart: { htmlLabels: false, useMaxWidth: true, padding: 14, wrappingWidth: 260 },
+  });
+} catch {}
+try { marked.setOptions({ gfm: true, breaks: true }); } catch {}
+
+async function loadBoard() {
+  const d = await api('/api/board');
+  BOARD = Array.isArray(d) ? d : (d.items || []);
+  $('#board-sub').textContent = BOARD.length + ' saved';
+  $('#board-list').innerHTML = BOARD.map((b, i) => `
+    <div class="bitem" data-i="${i}">
+      <div class="bt">${esc(b.title)}</div>
+      <div class="bm">
+        <span class="kind ${esc(b.content_type)}">${esc(b.content_type)}</span>
+        ${b.task_number ? `<span class="mono">${esc(b.task_number)}</span>` : ''}
+        <span>${b.created_at ? new Date(b.created_at).toLocaleDateString() : ''}</span>
+      </div>
+    </div>`).join('');
+  $('#board-list').querySelectorAll('.bitem').forEach(el => {
+    el.onclick = () => {
+      $('#board-list').querySelectorAll('.bitem').forEach(x => x.classList.remove('sel'));
+      el.classList.add('sel');
+      showBoard(BOARD[+el.dataset.i]);
+    };
+  });
+}
+
+async function showBoard(b) {
+  $('#board-title').textContent = b.title;
+  $('#board-meta').textContent = [b.task_number, b.session_title].filter(Boolean).join(' · ');
+  const body = $('#board-body');
+  if (b.content_type === 'mermaid') {
+    try {
+      const { svg } = await mermaid.render('mmd' + (++mermaidSeq), b.content);
+      /* foreignObject is not in DOMPurify's svg profile and gets stripped,
+         which silently removed every label and left bare coloured boxes.
+         HTML labels live inside it, so it has to be allowed back explicitly
+         — the html profile still sanitises what is in there. */
+      body.innerHTML = DOMPurify.sanitize(svg, {
+        USE_PROFILES: { svg: true, svgFilters: true, html: true },
+      });
+    } catch (e) {
+      // A diagram that will not parse is still worth reading as source.
+      body.innerHTML = `<div class="empty">Diagram did not parse — showing source.</div>
+        <pre><code>${esc(b.content)}</code></pre>`;
+    }
+  } else {
+    body.innerHTML = DOMPurify.sanitize(marked.parse(b.content || ''));
+  }
+  body.parentElement.scrollTop = 0;
+}
+
+/* ── Sessions ───────────────────────────────────────────────────────────── */
+async function loadSessions() {
+  const d = await api('/api/sessions?limit=200');
+  const rows = Array.isArray(d) ? d : (d.sessions || []);
+  $('#sess-sub').textContent = rows.length + ' sessions';
+  $('#sessions').innerHTML = rows.map((r, i) => {
+    const tasks = r.tasks || [];
+    return `<tr>
+      <td class="mono muted">${esc(r.date || '')}</td>
+      <td>${esc(r.ai_title || '(untitled)')}</td>
+      <td class="muted">${esc(r.project || '—')}</td>
+      <td><div class="taskcell" data-i="${i}">${taskChips(tasks, false)}</div></td>
+    </tr>`;
+  }).join('');
+
+  // Collapsed by default; expanding is per-row and reversible.
+  $('#sessions').querySelectorAll('.taskcell').forEach(cell => {
+    cell.onclick = e => {
+      if (!e.target.classList.contains('morebtn')) return;
+      const t = rows[+cell.dataset.i].tasks || [];
+      const open = e.target.dataset.open === '1';
+      cell.innerHTML = taskChips(t, !open);
+    };
+  });
+}
+
+function taskChips(tasks, expanded) {
+  if (!tasks.length) return '<span class="muted">—</span>';
+  const show = expanded ? tasks : tasks.slice(0, 1);
+  const chips = show.map(t => `<span class="tasktag">${esc(t.task_number)}</span>`).join('');
+  if (tasks.length <= 1) return chips;
+  return chips + `<button class="morebtn" data-open="${expanded ? 1 : 0}">${
+    expanded ? 'show less' : '+' + (tasks.length - 1) + ' more'}</button>`;
+}
+
 /* ── Nav ────────────────────────────────────────────────────────────────── */
 document.querySelectorAll('.navitem').forEach(it => {
   it.onclick = () => {
@@ -1082,8 +1401,11 @@ document.querySelectorAll('.navitem').forEach(it => {
     document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
     $('#v-' + v).classList.add('on');
     $('#crumb').textContent = it.dataset.name || it.textContent.trim().split(/\s/)[0];
-    if (v === 'soon') $('#soon-txt').textContent = (it.dataset.name || 'This tab') + ' is not rebuilt in this prototype yet.';
-    if (v === 'databases' && !$('#dbs').dataset.done) { $('#dbs').dataset.done = 1; loadDbs(); }
+    const once = (el, fn) => { if (!el.dataset.done) { el.dataset.done = 1; fn(); } };
+    if (v === 'databases') once($('#dbs'), loadDbs);
+    if (v === 'make')      once($('#make-list'), loadMake);
+    if (v === 'board')     once($('#board-list'), loadBoard);
+    if (v === 'sessions')  once($('#sessions'), loadSessions);
     closeDrawer();
   };
 });

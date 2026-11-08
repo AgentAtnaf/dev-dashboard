@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const {summarizeFailure:s} = require('../failure-summary');
+const steps=[{step_id:'s1',line:1,command:'clickbtn Confirm',status:'passed'}, {step_id:'s2',line:2,command:'expect state Confirmed',status:'failed',error:'Still draft'}];
+let result=s({steps,runtime:{requests:[{request_id:'r1',step_id:'s1',status:'rpc_error'}]}});
+assert.equal(result.primary,steps[1]); assert.equal(result.nearby.length,1); assert.equal(result.linked.length,0);assert.match(result.note,/causation is not established/);
+result=s({steps,runtime:{requests:[{request_id:'r2',step_id:'s2',status:'rpc_error'}]}});assert.equal(result.linked.length,1);
+assert.equal(s({status:'passed',steps:[]}).headline,'No recorded failures');
+assert.match(s({status:'unknown',legacy:true}).headline,/No failure details/);
+assert.equal(s({status:'failed',error:'Browser failed'}).run_error,'Browser failed');
+assert.match(s({status:'passed',runtime:{requests:[{status:'rpc_error'}]}}).note,/do not change/);
+assert.equal(s({steps:[{line:1,command:'clickbtn Missing',status:'failed'}]}).primary.line,1);
+console.log('PASS failure summaries: assertions, exact association, possible causes, expected RPC errors, legacy and startup failures');

@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 session_map.db
 *.log
+session_map.db.bak-*
+.vscode/

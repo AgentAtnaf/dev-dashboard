@@ -1,0 +1,29 @@
+[Unit]
+# The dashboard must outlive the terminal that starts it. Launching it from a
+# shell (nohup/setsid) leaves it inside the login session, so a VS Code window
+# reload — switching workspace folder, reconnecting Remote-SSH — tears down the
+# pty and takes the server with it. systemd owns it instead: nothing in the
+# editor's process tree can reach it.
+Description=Dev Dashboard (http://127.0.0.1:7878)
+After=network.target
+# A failing bind retried every 3s must never trip the start-limit and give up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+ExecStart=/home/server/odoo-17.0/.venv/bin/python /home/server/dev-dashboard/server.py
+WorkingDirectory=/home/server/dev-dashboard
+# It also binds the LAN address, which is a dynamic DHCP lease: if that
+# interface is not up yet at boot the bind fails, so always retry.
+Restart=always
+RestartSec=3
+# Kill only the dashboard itself on stop/restart, never its whole cgroup. The
+# dashboard deliberately spawns processes meant to outlive it — the Odoo server
+# it starts, and the Playwright trace viewer on 9323. With the default
+# KillMode=control-group, every `systemctl restart dev-dashboard` took those
+# down with it, stopping a running Odoo out from under the user.
+KillMode=process
+SyslogIdentifier=dev-dashboard
+
+[Install]
+WantedBy=default.target

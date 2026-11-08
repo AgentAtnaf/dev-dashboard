@@ -8,6 +8,10 @@ import os
 import re
 import signal
 import sqlite3
+import socket
+import sys
+from urllib.parse import quote
+from contextlib import ExitStack
 import subprocess
 import threading
 import time
@@ -15,12 +19,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import shutil
+from pathlib import Path
+from run_history import RunHistory
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -255,8 +261,43 @@ def get_db():
     return conn
 
 
+history = RunHistory(get_db, [p for p in os.environ.get(
+    "TRACE_HISTORY_DIRS", "/home/server/odoo-17.0/Record_task:/home/server/odoo-trace-kit/traces"
+).split(os.pathsep) if p])
+
+
+def _migrate_session_tasks(conn):
+    """session_tasks used to be one row per session (session_id PRIMARY KEY), which meant
+    every `cli.py task` call overwrote the previous task number for that session. Migrate to
+    an append-only history table (one session_id can have many task rows) so past tasks
+    survive."""
+    cols = conn.execute("PRAGMA table_info(session_tasks)").fetchall()
+    if not cols:
+        return  # table doesn't exist yet; the CREATE TABLE below will make the new schema
+    if any(c["name"] == "id" for c in cols):
+        return  # already migrated
+    conn.execute("ALTER TABLE session_tasks RENAME TO session_tasks_v1")
+    conn.execute("""
+        CREATE TABLE session_tasks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            task_number TEXT NOT NULL,
+            notes       TEXT DEFAULT '',
+            updated_at  TEXT
+        )
+    """)
+    conn.execute("""
+        INSERT INTO session_tasks(session_id, task_number, notes, updated_at)
+        SELECT session_id, task_number, notes, updated_at FROM session_tasks_v1
+        WHERE task_number != ''
+    """)
+    conn.execute("DROP TABLE session_tasks_v1")
+    conn.commit()
+
+
 def init_db():
     conn = get_db()
+    _migrate_session_tasks(conn)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS session_cache (
             session_id  TEXT PRIMARY KEY,
@@ -266,11 +307,13 @@ def init_db():
             project     TEXT
         );
         CREATE TABLE IF NOT EXISTS session_tasks (
-            session_id  TEXT PRIMARY KEY,
-            task_number TEXT,
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  TEXT NOT NULL,
+            task_number TEXT NOT NULL,
             notes       TEXT DEFAULT '',
             updated_at  TEXT
         );
+        CREATE INDEX IF NOT EXISTS idx_session_tasks_session_id ON session_tasks(session_id);
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,
             value TEXT
@@ -297,7 +340,29 @@ def init_db():
             task_number   TEXT DEFAULT '',
             created_at    TEXT
         );
+        CREATE TABLE IF NOT EXISTS flows (
+            name          TEXT PRIMARY KEY,
+            content       TEXT NOT NULL,
+            session_id    TEXT DEFAULT '',
+            session_title TEXT DEFAULT '',
+            task_number   TEXT DEFAULT '',
+            created_at    TEXT,
+            updated_at    TEXT
+        );
+        CREATE TABLE IF NOT EXISTS flow_visuals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT NOT NULL,
+            content       TEXT NOT NULL,
+            db_name       TEXT DEFAULT '',
+            session_id    TEXT DEFAULT '',
+            session_title TEXT DEFAULT '',
+            task_number   TEXT DEFAULT '',
+            created_at    TEXT
+        );
     """)
+    if "db_name" not in {row[1] for row in conn.execute("PRAGMA table_info(flows)")}:
+        conn.execute("ALTER TABLE flows ADD COLUMN db_name TEXT DEFAULT ''")
+    history.init_schema(conn)
     # Seed addons_profiles from hardcoded defaults if empty
     for name, paths in ADDONS_PROFILES.items():
         conn.execute(
@@ -334,7 +399,11 @@ def write_setting(key: str, value: str):
 
 # ── Session helpers ────────────────────────────────────────────────────────────
 def extract_session_info(jsonl_path: str):
-    """Return (ai_title, first_user_message) from first 400 lines."""
+    """Return (ai_title, first_user_message).
+    Scans the first 400 lines for first_msg and an early title, then scans the
+    last 16 KB for the most recent ai-title (Claude renames sessions mid-session
+    by appending a new ai-title event — the last one wins).
+    """
     ai_title = ""
     first_msg = ""
     try:
@@ -347,8 +416,8 @@ def extract_session_info(jsonl_path: str):
                 except json.JSONDecodeError:
                     continue
                 t = obj.get("type", "")
-                if t == "ai-title" and not ai_title:
-                    ai_title = obj.get("aiTitle", "")
+                if t == "ai-title" and obj.get("aiTitle"):
+                    ai_title = obj.get("aiTitle", "")  # keep updating (last wins)
                 if not first_msg and t == "user":
                     msg = obj.get("message", {})
                     if isinstance(msg, dict):
@@ -360,17 +429,87 @@ def extract_session_info(jsonl_path: str):
                                     break
                         elif isinstance(content, str):
                             first_msg = content[:100]
-                if ai_title and first_msg:
-                    break
+    except OSError:
+        pass
+    # Scan last 16 KB for a more recent ai-title (overrides the early one if found)
+    try:
+        with open(jsonl_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            if size > 16384:
+                f.seek(-16384, 2)
+                tail = f.read().decode("utf-8", errors="replace")
+                for line in tail.splitlines():
+                    try:
+                        obj = json.loads(line)
+                        if obj.get("type") == "ai-title" and obj.get("aiTitle"):
+                            ai_title = obj.get("aiTitle", "")
+                    except json.JSONDecodeError:
+                        pass
     except OSError:
         pass
     return ai_title, first_msg
 
 
 # ── Odoo conf helpers ──────────────────────────────────────────────────────────
+def detect_db_version(db_name: str) -> str:
+    """Look up which Odoo major version a database was installed with.
+
+    Checks the db_versions cache first, else asks Postgres directly via
+    ir_module_module.latest_version (e.g. "19.0.1.0" -> "19") and caches it.
+    Used to pick a sane default install instead of hardcoding one version,
+    which previously caused Odoo 17 to be launched against Odoo 19 databases.
+    """
+    if not db_name:
+        return ""
+    conn = get_db()
+    row = conn.execute("SELECT odoo_version FROM db_versions WHERE db_name=?", (db_name,)).fetchone()
+    conn.close()
+    if row:
+        return row["odoo_version"]
+    result = subprocess.run(
+        ["psql", "-U", "odoo", "-h", "localhost", db_name, "-t", "-A", "-c",
+         "SELECT latest_version FROM ir_module_module WHERE name='base' LIMIT 1"],
+        capture_output=True, text=True,
+        env={**os.environ, "PGPASSWORD": "odoo"},
+        timeout=5,
+    )
+    version = ""
+    if result.returncode == 0 and result.stdout.strip():
+        version = result.stdout.strip().split('.')[0]
+    if version:
+        conn = get_db()
+        conn.execute("INSERT OR REPLACE INTO db_versions(db_name,odoo_version) VALUES(?,?)",
+                     (db_name, version))
+        conn.commit()
+        conn.close()
+    return version
+
+
+def default_odoo_version() -> str:
+    """Best-guess install to use when the caller doesn't specify --version."""
+    return detect_db_version(get_active_db()) or "17"
+
+
+def running_odoo_conf() -> str:
+    """The conf the live Odoo was actually started with, if one is running.
+
+    Without this the dashboard reads Odoo 17's conf even while Odoo 19 is the
+    running server, so the Databases tab reports the wrong current database.
+    """
+    pid = get_odoo_pid()
+    if pid:
+        for arg in get_odoo_cmdline(pid):
+            if arg.startswith("--config="):
+                path = arg.split("=", 1)[1]
+                if os.path.exists(path):
+                    return path
+    return ODOO_CONF
+
+
 def get_active_db() -> str:
     try:
-        with open(ODOO_CONF) as f:
+        with open(running_odoo_conf()) as f:
             text = f.read()
         m = re.search(r'^db_name\s*=\s*(.+)$', text, re.MULTILINE)
         if m:
@@ -381,9 +520,15 @@ def get_active_db() -> str:
     return ""
 
 
-def toggle_addons_paths(target_paths: List[str]):
-    """Comment/uncomment continuation lines in addons_path block — preserves unknown lines."""
-    with open(ODOO_CONF) as f:
+def toggle_addons_paths(target_paths: List[str], conf_path: Optional[str] = None):
+    """Comment/uncomment continuation lines in addons_path block — preserves unknown lines.
+
+    conf_path selects which install's odoo.conf to edit. It defaults to the
+    Odoo 17 conf only for callers that predate multi-version support; anything
+    switching databases must pass the conf that owns that database.
+    """
+    conf_path = conf_path or ODOO_CONF
+    with open(conf_path) as f:
         lines = f.readlines()
 
     # Build set of all paths from all known profiles (only these are safe to toggle)
@@ -435,26 +580,55 @@ def toggle_addons_paths(target_paths: List[str]):
 
         new_lines.append(line)
 
-    with open(ODOO_CONF, 'w') as f:
+    with open(conf_path, 'w') as f:
         f.writelines(new_lines)
 
 
-def set_active_db(db_name: str):
-    with open(ODOO_CONF) as f:
+def conf_for_db(db_name: str) -> str:
+    """The odoo.conf belonging to the install that owns this database.
+
+    Switching to an Odoo 19 database used to rewrite db_name and addons_path in
+    the Odoo 17 conf and then launch Odoo 19 against its own, untouched conf —
+    so the switch appeared to do nothing on 19 and 14 while quietly editing 17's
+    config. Resolve the conf from the database's version instead.
+    """
+    install = ODOO_INSTALLS.get(detect_db_version(db_name) or "")
+    return install["conf"] if install else ODOO_CONF
+
+
+def set_active_db(db_name: str, conf_path: Optional[str] = None):
+    conf_path = conf_path or ODOO_CONF
+    with open(conf_path) as f:
         text = f.read()
     if re.search(r'^db_name\s*=', text, re.MULTILINE):
         text = re.sub(r'^db_name\s*=.*$', f'db_name = {db_name}', text, flags=re.MULTILINE)
     else:
         # Insert right after [options] line
         text = re.sub(r'(\[options\]\n)', r'\1db_name = ' + db_name + '\n', text, count=1)
-    with open(ODOO_CONF, "w") as f:
+    with open(conf_path, "w") as f:
         f.write(text)
 
 
 def get_odoo_pid() -> Optional[int]:
+    """Find a real odoo-bin server process.
+
+    pgrep -f odoo-bin does a substring match against the WHOLE command line of
+    every process on the box, so a shell wrapper that merely mentions the text
+    "odoo-bin" (a grep, a debugpy launcher, this very pgrep call quoted back at
+    itself, or another tool's --odoo-bin=<path> flag VALUE) is misidentified as
+    a running Odoo server. Instead, inspect each candidate's actual argv and
+    require that the SCRIPT BEING EXECUTED (argv[1], since argv[0] is the
+    python interpreter) has basename "odoo-bin" — not just any argument
+    anywhere on the command line, which also matches e.g. the odoo-introspect
+    MCP servers' own `--odoo-bin /path/to/odoo-bin` option.
+    """
     result = subprocess.run(["pgrep", "-f", "odoo-bin"], capture_output=True, text=True)
-    pids = [int(p) for p in result.stdout.strip().split() if p.strip().isdigit()]
-    return pids[0] if pids else None
+    candidates = [int(p) for p in result.stdout.strip().split() if p.strip().isdigit()]
+    for pid in candidates:
+        argv = get_odoo_cmdline(pid)
+        if len(argv) > 1 and os.path.basename(argv[1]) == "odoo-bin":
+            return pid
+    return None
 
 
 def get_odoo_cmdline(pid: int) -> List[str]:
@@ -497,7 +671,11 @@ def list_sessions():
 
     conn = get_db()
     cached = {r["session_id"]: r for r in conn.execute("SELECT * FROM session_cache").fetchall()}
-    task_map = {r["session_id"]: r for r in conn.execute("SELECT * FROM session_tasks").fetchall()}
+    task_history: dict[str, list] = {}
+    for r in conn.execute("SELECT session_id, task_number, notes, updated_at FROM session_tasks ORDER BY id ASC"):
+        task_history.setdefault(r["session_id"], []).append(
+            {"task_number": r["task_number"], "notes": r["notes"], "updated_at": r["updated_at"]}
+        )
 
     result = []
     to_cache = []
@@ -511,7 +689,9 @@ def list_sessions():
             ai_title, first_msg = extract_session_info(e["path"])
             to_cache.append((sid, ai_title, first_msg, e["mtime"], e["project"]))
 
-        t = task_map.get(sid)
+        # Most-recent-first history of every task this session has touched.
+        history = list(reversed(task_history.get(sid, [])))
+        latest = history[0] if history else None
         result.append({
             "session_id": sid,
             "ai_title": ai_title or first_msg or "(no title)",
@@ -519,8 +699,9 @@ def list_sessions():
             "mtime": e["mtime"],
             "date": datetime.fromtimestamp(e["mtime"]).strftime("%Y-%m-%d %H:%M"),
             "project": e["project"],
-            "task_number": t["task_number"] if t else "",
-            "notes": t["notes"] if t else "",
+            "task_number": latest["task_number"] if latest else "",
+            "notes": latest["notes"] if latest else "",
+            "tasks": history,
         })
 
     if to_cache:
@@ -533,6 +714,19 @@ def list_sessions():
     return result
 
 
+@app.get("/api/sessions/{session_id}/context")
+def get_session_context(session_id: str):
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return {"session_id": session_id, "task_number": row["task_number"] if row else ""}
+    finally:
+        conn.close()
+
+
 class TaskUpdate(BaseModel):
     task_number: str = ""
     notes: str = ""
@@ -543,11 +737,16 @@ def update_session_task(session_id: str, body: TaskUpdate):
     if body.task_number and not re.fullmatch(r'T\d{2}-\d{5}', body.task_number):
         raise HTTPException(400, "task_number must be T##-##### (e.g. T26-04156) or empty")
     conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO session_tasks(session_id,task_number,notes,updated_at) VALUES(?,?,?,?)",
-        (session_id, body.task_number, body.notes, datetime.now(timezone.utc).isoformat()),
-    )
-    conn.commit()
+    last = conn.execute(
+        "SELECT task_number, notes FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if not last or last["task_number"] != body.task_number or last["notes"] != body.notes:
+        conn.execute(
+            "INSERT INTO session_tasks(session_id,task_number,notes,updated_at) VALUES(?,?,?,?)",
+            (session_id, body.task_number, body.notes, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
     conn.close()
     return {"ok": True}
 
@@ -587,132 +786,83 @@ def save_settings(body: SettingsUpdate):
     return {"ok": True}
 
 
-# ── Chat endpoint ──────────────────────────────────────────────────────────────
-class ChatRequest(BaseModel):
-    messages: List[Dict[str, Any]]
-    model: Optional[str] = None
-    system: Optional[str] = None
+# ── Session Find endpoint ──────────────────────────────────────────────────────
+class FindSessionRequest(BaseModel):
+    query: str
 
 
-@app.post("/api/chat")
-async def chat(body: ChatRequest):
+@app.post("/api/sessions/find")
+async def find_sessions_by_query(body: FindSessionRequest):
     api_key = read_setting("anthropic_api_key")
     if not api_key:
-        raise HTTPException(400, "Anthropic API key not configured — open Settings (gear icon)")
+        raise HTTPException(400, "No Anthropic API key configured — open Settings (gear icon)")
 
-    model = body.model or read_setting("chat_model", "claude-sonnet-4-6")
-    payload: Dict[str, Any] = {
-        "model": model,
-        "max_tokens": 8096,
-        "stream": True,
-        "messages": body.messages,
-    }
-    if body.system:
-        payload["system"] = body.system
+    model = read_setting("chat_model", "claude-haiku-4-5-20251001")
 
-    async def stream_response():
-        try:
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    "POST",
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
-                    json=payload,
-                    timeout=120,
-                ) as resp:
-                    if resp.status_code != 200:
-                        err = await resp.aread()
-                        yield f"data: {json.dumps({'type':'error','message':err.decode()})}\n\n"
-                        return
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
-        except Exception as exc:
-            yield f"data: {json.dumps({'type':'error','message':str(exc)})}\n\n"
+    conn = get_db()
+    cached = conn.execute(
+        "SELECT session_id, ai_title, mtime FROM session_cache ORDER BY mtime DESC LIMIT 150"
+    ).fetchall()
+    task_rows = conn.execute("SELECT session_id, task_number FROM session_tasks").fetchall()
+    conn.close()
 
-    return StreamingResponse(stream_response(), media_type="text/event-stream")
+    task_map = {r["session_id"]: r["task_number"] for r in task_rows}
+    sessions = []
+    for row in cached:
+        dt = datetime.fromtimestamp(row["mtime"]).strftime("%Y-%m-%d")
+        sessions.append({
+            "session_id": row["session_id"],
+            "title": row["ai_title"] or "(untitled)",
+            "date": dt,
+            "task": task_map.get(row["session_id"], "") or "",
+        })
 
+    if not sessions:
+        return []
 
-# ── Claude CLI chat endpoints ──────────────────────────────────────────────────
-@app.get("/api/chat/cli-status")
-def chat_cli_status():
-    return {"available": CLAUDE_CLI is not None, "path": CLAUDE_CLI}
+    lines = [
+        f"{i+1}. {s['title']} | {s['date']}" + (f" | {s['task']}" if s["task"] else "")
+        for i, s in enumerate(sessions)
+    ]
+    prompt = (
+        f'Search query: "{body.query}"\n\n'
+        "Find the most relevant sessions from this list. Return a JSON array (max 10), most relevant first.\n\n"
+        "Sessions:\n" + "\n".join(lines) +
+        '\n\nReturn raw JSON only, no markdown:\n'
+        '[{"index": 1, "reason": "one sentence why this matches"}]\n'
+        "Only include sessions genuinely relevant to the query."
+    )
 
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+            json={"model": model, "max_tokens": 1024,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30,
+        )
 
-class CliChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = None   # Claude Code session UUID for --resume
-    project: Optional[str] = None      # "odoo-17.0" or "odoo" — determines CWD for --resume
-    model: Optional[str] = None
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.json().get("error", {}).get("message", "API error"))
 
+    try:
+        ranked = json.loads(r.json()["content"][0]["text"])
+    except Exception:
+        raise HTTPException(500, "Failed to parse AI response")
 
-@app.post("/api/chat/via-cli")
-async def chat_via_cli(body: CliChatRequest):
-    if not CLAUDE_CLI:
-        raise HTTPException(400, "Claude CLI not found — install Claude Code first")
-
-    cmd = [CLAUDE_CLI, "-p", body.message, "--output-format", "stream-json", "--verbose"]
-    if body.session_id:
-        cmd += ["--resume", body.session_id]
-    if body.model:
-        cmd += ["--model", body.model]
-
-    # Use the project's working directory so --resume can find the session file
-    cwd = PROJECT_DIRS.get(body.project, DASHBOARD_DIR) if body.project else DASHBOARD_DIR
-
-    async def stream():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env={**os.environ, "HOME": os.path.expanduser("~")},
-            )
-            last_len = 0
-            session_id = None
-
-            async for raw in proc.stdout:
-                line = raw.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    evt = json.loads(line)
-                    etype = evt.get("type")
-
-                    # Capture session_id from any event
-                    if not session_id and "session_id" in evt:
-                        session_id = evt["session_id"]
-
-                    if etype == "assistant":
-                        content = evt.get("message", {}).get("content", [])
-                        full_text = "".join(
-                            b.get("text", "") for b in content if b.get("type") == "text"
-                        )
-                        delta = full_text[last_len:]
-                        if delta:
-                            yield f"data: {json.dumps({'type': 'text', 'text': delta})}\n\n"
-                            last_len = len(full_text)
-
-                    elif etype == "result":
-                        sid = evt.get("session_id") or session_id or ""
-                        yield f"data: {json.dumps({'type': 'done', 'session_id': sid})}\n\n"
-
-                except json.JSONDecodeError:
-                    pass  # Skip non-JSON lines (rare)
-
-            await proc.wait()
-            if proc.returncode != 0:
-                err = (await proc.stderr.read()).decode("utf-8", errors="replace")[:600]
-                yield f"data: {json.dumps({'type': 'error', 'text': err or 'CLI exited with error'})}\n\n"
-
-        except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(exc)})}\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    results = []
+    for item in ranked:
+        idx = item.get("index", 0) - 1
+        if 0 <= idx < len(sessions):
+            s = sessions[idx]
+            results.append({
+                "session_id": s["session_id"],
+                "ai_title": s["title"],
+                "date": s["date"],
+                "task_number": s["task"],
+                "reason": item.get("reason", ""),
+            })
+    return results
 
 
 # ── Database endpoints ─────────────────────────────────────────────────────────
@@ -751,15 +901,18 @@ def switch_database(body: SwitchDBRequest):
 
     pid = get_odoo_pid()
 
+    # Edit the conf of the install that owns this database, not always Odoo 17's.
+    target_conf = conf_for_db(body.db_name)
+
     # Update conf: db_name + toggle addons_path (if profile is assigned)
-    set_active_db(body.db_name)
+    set_active_db(body.db_name, target_conf)
     conn = get_db()
     row = conn.execute("SELECT profile FROM db_profiles WHERE db_name=?", (body.db_name,)).fetchone()
     conn.close()
     if row and row["profile"]:
         paths = get_profile_paths(row["profile"])
         if paths:
-            toggle_addons_paths(paths)
+            toggle_addons_paths(paths, target_conf)
 
     # Kill existing Odoo
     if pid:
@@ -789,7 +942,14 @@ def switch_database(body: SwitchDBRequest):
         cmdline = []
 
     if not cmdline:
-        inst = ODOO_INSTALLS.get("17") or next(iter(ODOO_INSTALLS.values()), None)
+        version = detect_db_version(body.db_name) or "17"
+        inst = ODOO_INSTALLS.get(version) or next(iter(ODOO_INSTALLS.values()), None)
+        if inst:
+            cmdline = [inst["python"], inst["bin"], f"--config={inst['conf']}", "--dev", "xml"]
+    elif target_conf not in cmdline and not any(a.startswith(f"--config={target_conf}") for a in cmdline):
+        # Reusing the previous process's argv would keep pointing at the old
+        # install's conf after switching to a database from another version.
+        inst = ODOO_INSTALLS.get(detect_db_version(body.db_name) or "")
         if inst:
             cmdline = [inst["python"], inst["bin"], f"--config={inst['conf']}", "--dev", "xml"]
 
@@ -899,6 +1059,26 @@ def stop_odoo():
         return {"status": "not_running"}
 
 
+class StartOdooRequest(BaseModel):
+    odoo_version: str = ""
+
+
+@app.post("/api/odoo/start")
+def start_odoo(body: StartOdooRequest = StartOdooRequest()):
+    pid = get_odoo_pid()
+    if pid:
+        return {"status": "already_running", "pid": pid}
+    version = body.odoo_version or default_odoo_version()
+    inst = ODOO_INSTALLS.get(version) or next(iter(ODOO_INSTALLS.values()), None)
+    if not inst:
+        return {"status": "error", "detail": "No Odoo installation found"}
+    cmdline = [inst["python"], inst["bin"], f"--config={inst['conf']}", "--dev", "xml"]
+    log_path = "/tmp/odoo-dashboard-restart.log"
+    with open(log_path, "w") as log:
+        subprocess.Popen(cmdline, stdout=log, stderr=log, start_new_session=True, close_fds=True)
+    return {"status": "starting", "log": log_path}
+
+
 @app.post("/api/odoo/restart")
 def restart_odoo():
     pid = get_odoo_pid()
@@ -907,7 +1087,7 @@ def restart_odoo():
     # Capture cmdline before killing so we can relaunch with same args
     cmdline = get_odoo_cmdline(pid)
     if not cmdline:
-        inst = ODOO_INSTALLS.get("17") or next(iter(ODOO_INSTALLS.values()), None)
+        inst = ODOO_INSTALLS.get(default_odoo_version()) or next(iter(ODOO_INSTALLS.values()), None)
         if inst:
             cmdline = [inst["python"], inst["bin"], f"--config={inst['conf']}", "--dev", "xml"]
     if not cmdline:
@@ -967,28 +1147,7 @@ def get_odoo_installations():
 
 @app.get("/api/databases/{db_name}/version")
 def get_db_version(db_name: str):
-    conn = get_db()
-    row = conn.execute("SELECT odoo_version FROM db_versions WHERE db_name=?", (db_name,)).fetchone()
-    conn.close()
-    if row:
-        return {"db_name": db_name, "version": row["odoo_version"]}
-    result = subprocess.run(
-        ["psql", "-U", "odoo", "-h", "localhost", db_name, "-t", "-A", "-c",
-         "SELECT latest_version FROM ir_module_module WHERE name='base' LIMIT 1"],
-        capture_output=True, text=True,
-        env={**os.environ, "PGPASSWORD": "odoo"},
-        timeout=5,
-    )
-    version = ""
-    if result.returncode == 0 and result.stdout.strip():
-        version = result.stdout.strip().split('.')[0]  # "17.0.1.3" → "17"
-    if version:
-        conn = get_db()
-        conn.execute("INSERT OR REPLACE INTO db_versions(db_name,odoo_version) VALUES(?,?)",
-                     (db_name, version))
-        conn.commit()
-        conn.close()
-    return {"db_name": db_name, "version": version}
+    return {"db_name": db_name, "version": detect_db_version(db_name)}
 
 
 @app.get("/api/line/log")
@@ -1076,28 +1235,18 @@ def record_task(body: RecordTaskRequest):
         return JSONResponse(status_code=422, content={"error": "Invalid task number format"})
     sid = body.session_id
     if not sid:
-        latest_mtime, latest_sid = 0.0, None
-        for proj_dir, _ in CLAUDE_PROJECTS:
-            if not os.path.isdir(proj_dir):
-                continue
-            for fname in os.listdir(proj_dir):
-                if not fname.endswith(".jsonl"):
-                    continue
-                fpath = os.path.join(proj_dir, fname)
-                mt = os.path.getmtime(fpath)
-                if mt > latest_mtime:
-                    latest_mtime = mt
-                    latest_sid = os.path.splitext(fname)[0]
-        sid = latest_sid
-    if not sid:
-        return {"ok": False, "error": "No session found"}
+        return JSONResponse(status_code=422, content={"error": "Explicit session_id is required"})
     conn = get_db()
-    conn.execute(
-        "INSERT INTO session_tasks(session_id, task_number, updated_at) VALUES(?,?,?) "
-        "ON CONFLICT(session_id) DO UPDATE SET task_number=excluded.task_number, updated_at=excluded.updated_at",
-        (sid, body.task_number, datetime.now(timezone.utc).isoformat()),
-    )
-    conn.commit()
+    last = conn.execute(
+        "SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
+        (sid,),
+    ).fetchone()
+    if not last or last["task_number"] != body.task_number:
+        conn.execute(
+            "INSERT INTO session_tasks(session_id, task_number, updated_at) VALUES(?,?,?)",
+            (sid, body.task_number, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
     conn.close()
     return {"ok": True, "session_id": sid, "task_number": body.task_number}
 
@@ -1130,7 +1279,7 @@ def add_board_item(body: BoardItemCreate):
         conn = get_db()
         cache = conn.execute("SELECT ai_title FROM session_cache WHERE session_id=?",
                              (body.session_id,)).fetchone()
-        task = conn.execute("SELECT task_number FROM session_tasks WHERE session_id=?",
+        task = conn.execute("SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
                             (body.session_id,)).fetchone()
         conn.close()
         if cache:
@@ -1188,12 +1337,284 @@ def delete_board_item(item_id: int):
     return {"ok": True}
 
 
+# ── Flow endpoints ─────────────────────────────────────────────────────────────
+class FlowSaveRequest(BaseModel):
+    name: str
+    content: str
+    session_id: str = ""
+    task_number: str = ""
+    db_name: str = ""
+
+
+@app.get("/api/flows")
+def list_flows():
+    runs = history.runs()
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT name, session_id, session_title, task_number, db_name, created_at, updated_at, "
+            "length(content) as size, (length(content) - length(replace(content,char(10),''))) + 1 as lines "
+            "FROM flows ORDER BY updated_at DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    flows = {row["name"]: {**dict(row), "saved": True, "run_count": 0, "latest_run": None} for row in rows}
+    for run in runs:
+        flow = flows.setdefault(run["flow_name"], {
+            "name": run["flow_name"], "session_id": run["session_id"], "session_title": "",
+            "task_number": run["task_number"], "db_name": run["db_name"], "saved": False,
+            "updated_at": run["started_at"], "run_count": 0, "latest_run": None,
+        })
+        flow["run_count"] += 1
+        if flow["latest_run"] is None:
+            flow["latest_run"] = run
+    return sorted(flows.values(), key=lambda f: (f["latest_run"] or {}).get("started_at") or f.get("updated_at") or "", reverse=True)
+
+
+@app.post("/api/flows")
+def save_flow(body: FlowSaveRequest):
+    if not re.fullmatch(r'[a-zA-Z0-9_\-]{1,80}', body.name):
+        raise HTTPException(400, "Flow name must be 1-80 alphanumeric/dash/underscore chars")
+    now = datetime.now(timezone.utc).isoformat()
+    # Resolve session title from cache
+    session_title = ""
+    if body.session_id:
+        conn = get_db()
+        row = conn.execute("SELECT ai_title FROM session_cache WHERE session_id=?", (body.session_id,)).fetchone()
+        conn.close()
+        if row:
+            session_title = row["ai_title"] or ""
+    # Resolve task number from session if not provided
+    task_number = body.task_number
+    if not task_number and body.session_id:
+        conn = get_db()
+        row = conn.execute("SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                           (body.session_id,)).fetchone()
+        conn.close()
+        if row:
+            task_number = row["task_number"] or ""
+    conn = get_db()
+    existing = conn.execute("SELECT created_at FROM flows WHERE name=?", (body.name,)).fetchone()
+    created_at = existing["created_at"] if existing else now
+    conn.execute(
+        "INSERT OR REPLACE INTO flows(name, content, session_id, session_title, task_number, db_name, created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (body.name, body.content, body.session_id, session_title, task_number, body.db_name, created_at, now),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "name": body.name, "updated": existing is not None}
+
+
+@app.get("/api/flows/{name}")
+def get_flow(name: str):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM flows WHERE name=?", (name,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, f"Flow '{name}' not found")
+    return dict(row)
+
+
+@app.delete("/api/flows/{name}")
+def delete_flow(name: str):
+    conn = get_db()
+    result = conn.execute("DELETE FROM flows WHERE name=?", (name,))
+    conn.commit()
+    conn.close()
+    if result.rowcount == 0:
+        raise HTTPException(404, f"Flow '{name}' not found")
+    return {"ok": True}
+
+
+# Local run history: results are indexed independently of mutable saved flows.
+@app.get("/api/flow-runs")
+def list_flow_runs(flow_name: Optional[str] = None, status: Optional[str] = None,
+                   limit: int = 50, offset: int = 0):
+    if status not in (None, "passed", "failed", "running", "stale", "unknown"):
+        raise HTTPException(400, "Unknown run status")
+    rows = history.runs(flow_name, status)
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    return {"runs": rows[offset:offset + limit], "total": len(rows), "offset": offset, "limit": limit}
+
+
+@app.get("/api/flow-runs/tagged")
+def list_tagged_runs():
+    """Runs tagged safe to delete, with how much each trace would reclaim."""
+    items = history.tagged()
+    pending = [i for i in items if i["bytes"] and not i["trace_purged_at"]]
+    return {"runs": items,
+            "reclaimable_bytes": sum(i["bytes"] for i in pending),
+            "pending_count": len(pending)}
+
+
+@app.post("/api/flow-runs/purge-tagged")
+def purge_tagged_runs():
+    """Delete the .zip of every tagged run. Reports and rows are left intact."""
+    freed = 0
+    removed, skipped = [], []
+    for item in history.tagged():
+        result = history.purge_trace(item["run_id"])
+        if result.get("ok"):
+            freed += result["bytes"]
+            removed.append(item["run_id"])
+        else:
+            skipped.append({"run_id": item["run_id"], "reason": result.get("reason", "")})
+    return {"removed": len(removed), "bytes_freed": freed, "skipped": skipped}
+
+
+@app.get("/api/flow-runs/{run_id}")
+def get_flow_run(run_id: str):
+    run = history.get(run_id)
+    if run is None:
+        raise HTTPException(404, "Run not found")
+    return {k: v for k, v in run.items() if not k.endswith("_path")}
+
+
+class RunNoteUpdate(BaseModel):
+    note: Optional[str] = None
+    safe_to_delete: Optional[bool] = None
+
+
+@app.post("/api/flow-runs/{run_id}/note")
+def set_run_note(run_id: str, body: RunNoteUpdate):
+    """Attach a note and/or the safe-to-delete tag to a run."""
+    if history.get(run_id) is None:
+        raise HTTPException(404, "Unknown run")
+    if body.note is None and body.safe_to_delete is None:
+        raise HTTPException(400, "Send note, safe_to_delete, or both")
+    return history.set_note(run_id, note=body.note, safe_to_delete=body.safe_to_delete)
+
+
+@app.post("/api/flow-runs/{run_id}/open-trace")
+def open_run_trace(run_id: str):
+    run = history.get(run_id)
+    if run is None or "trace" not in run["artifacts"]:
+        raise HTTPException(404, "Trace not available for this run")
+    path = Path(run["trace_path"])
+    if not history.allowed(path) or not path.is_file():
+        raise HTTPException(404, "Trace not available for this run")
+    # Use configured server identity, never a supplied URL or shell command.
+    host = os.environ.get("DASHBOARD_LAN_HOST", "192.168.64.3") or "127.0.0.1"
+    trace_url = f"http://{host}:7878/api/flow-runs/{quote(run_id, safe='')}/artifacts/trace"
+    try:
+        result = subprocess.run(
+            [sys.executable, "/home/server/odoo-trace-kit/open-trace.py", trace_url],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "Trace launch timed out. Check that VS Code is connected to this machine.")
+    except OSError:
+        raise HTTPException(503, "Trace launcher is unavailable.")
+    if result.returncode:
+        raise HTTPException(503, (result.stderr.strip() or "Could not open Trace Viewer.")[-1500:])
+    return {"ok": True, "message": "Asked VS Code to open this trace in your browser."}
+
+
+@app.get("/api/flow-runs/{run_id}/artifacts/{kind}")
+def get_run_artifact(run_id: str, kind: str):
+    run = history.get(run_id)
+    if run is None or kind not in run["artifacts"]:
+        raise HTTPException(404, "Artifact not available")
+    if kind == "flow":
+        return Response(run["report"]["flow"]["content"], media_type="text/plain",
+                        headers={"Content-Disposition": f'attachment; filename="{run_id}.flow.txt"'})
+    if kind == "result":
+        return JSONResponse(run["report"])
+    path = Path(run["trace_path" if kind == "trace" else "log_path"])
+    # Resolve again at delivery time to reject symlinks moved outside history roots.
+    if not history.allowed(path) or not path.is_file():
+        raise HTTPException(404, "Artifact not available")
+    return FileResponse(str(path.resolve()), media_type="application/zip" if kind == "trace" else "text/plain",
+                        filename=path.name)
+
+
+# ── Flow Visuals endpoints ─────────────────────────────────────────────────────
+class FlowVisualCreate(BaseModel):
+    title: str
+    content: str
+    db_name: str = ""
+    session_id: str = ""
+    session_title: str = ""
+    task_number: str = ""
+
+
+@app.get("/api/flowvisuals")
+def list_flow_visuals():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, db_name, session_id, session_title, task_number, created_at "
+        "FROM flow_visuals ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/flowvisuals/{item_id}")
+def get_flow_visual(item_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM flow_visuals WHERE id=?", (item_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "Flow visual not found")
+    return dict(row)
+
+
+@app.post("/api/flowvisuals")
+def create_flow_visual(body: FlowVisualCreate):
+    session_title = body.session_title
+    task_num = body.task_number
+    if body.session_id:
+        conn = get_db()
+        cache = conn.execute("SELECT ai_title FROM session_cache WHERE session_id=?",
+                             (body.session_id,)).fetchone()
+        task = conn.execute("SELECT task_number FROM session_tasks WHERE session_id=? ORDER BY id DESC LIMIT 1",
+                            (body.session_id,)).fetchone()
+        conn.close()
+        if cache and not session_title:
+            session_title = cache["ai_title"] or ""
+        if task and not task_num:
+            task_num = task["task_number"] or ""
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO flow_visuals(title, content, db_name, session_id, session_title, task_number, created_at) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (body.title, body.content, body.db_name, body.session_id,
+         session_title, task_num, datetime.now().isoformat(timespec="seconds")),
+    )
+    item_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": item_id}
+
+
+@app.delete("/api/flowvisuals/{item_id}")
+def delete_flow_visual(item_id: int):
+    conn = get_db()
+    result = conn.execute("DELETE FROM flow_visuals WHERE id=?", (item_id,))
+    conn.commit()
+    conn.close()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Flow visual not found")
+    return {"ok": True}
+
+
 # ── Serve frontend ─────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def root():
     html_path = os.path.join(DASHBOARD_DIR, "index.html")
     with open(html_path) as f:
         return f.read()
+
+
+@app.get("/failure-summary.js")
+def failure_summary_script():
+    return FileResponse(os.path.join(DASHBOARD_DIR, "failure-summary.js"), media_type="application/javascript")
+
+
+@app.get("/flows.js")
+def flow_history_script():
+    return FileResponse(os.path.join(DASHBOARD_DIR, "flows.js"), media_type="application/javascript")
 
 
 @app.get("/favicon.ico")
@@ -1210,5 +1631,11 @@ if os.path.isdir(_VENDOR_DIR):
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
-    print("Dev Dashboard → http://127.0.0.1:7878")
-    uvicorn.run(app, host="127.0.0.1", port=7878, reload=False)
+    # Keep loopback for the CLI and expose only the approved private interface.
+    lan_host = os.environ.get("DASHBOARD_LAN_HOST", "192.168.64.3")
+    hosts = list(dict.fromkeys(host for host in ("127.0.0.1", lan_host) if host))
+    with ExitStack() as stack:
+        listeners = [stack.enter_context(socket.create_server((host, 7878), backlog=2048)) for host in hosts]
+        for host in hosts:
+            print(f"Dev Dashboard → http://{host}:7878", flush=True)
+        uvicorn.Server(uvicorn.Config(app, reload=False)).run(sockets=listeners)

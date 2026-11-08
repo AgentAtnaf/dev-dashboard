@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="glass">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -142,6 +142,131 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   GLASS — the Apple reading of the material.
+
+   Translucency is not a surface treatment, it is a relationship: the glass
+   is nearly colourless and borrows everything from what is behind it. That
+   is why mono failed. Over flat black there is nothing to borrow, so the
+   glass renders as a grey rectangle and you are paying GPU time for it.
+
+   So this theme starts with the backdrop, not the cards: a five-blob colour
+   mesh that gives every panel something to pick up. The cards are a thin
+   white film over it, blurred hard and pushed to 190% saturation, which is
+   what makes the colour behind bloom through instead of going muddy.
+
+   One deliberate exception, from the glass lab: the run table does NOT get
+   the glass treatment. Translucency eats the contrast that 12px monospace
+   depends on. Shell is glass, dense data sits on a scrim.
+   ────────────────────────────────────────────────────────────────────────── */
+:root[data-theme="glass"] {
+  --vu-body: #05060f;
+
+  /* Apple system colours, dark-mode variants. */
+  --vu-brand: #0a84ff;
+  --vu-brand-focus: #409cff;
+  --vu-primary: #5e5ce6;
+  --vu-primary-focus: #7d7aff;
+  --on-accent: #ffffff;
+
+  --vu-success: #30d158;
+  --vu-success-focus: #3ee066;
+  --vu-warning: #ff9f0a;
+  --vu-error: #ff453a;
+  --vu-error-focus: #ff6961;
+
+  /* Lifted from #b6bdd4: measured 4.07:1 over the blue blob and 4.16:1
+     over the teal one, both just under the 4.5 AA line. Brightening the
+     text keeps the backdrop as vivid as it is meant to be. */
+  --vu-text: #c9cfe2;
+  --vu-text-focus: #ffffff;
+  --vu-border: rgba(255,255,255,.22);
+  --vu-border-navbar: rgba(255,255,255,.18);
+  --vu-grey-400: #c3c9dd;
+  --vu-grey-500: #a3aac1;
+  --vu-grey-600: #5d6379;
+  --vu-secondary: rgba(255,255,255,.08);
+  --vu-sidenav-btn: rgba(255,255,255,.1);
+
+  /* The backdrop does the colouring. Everything else only borrows from it. */
+  --g-cover:
+    radial-gradient(62rem 44rem at 10% 2%,   #4318ff 0%, transparent 58%),
+    radial-gradient(52rem 42rem at 92% 12%,  #0a84ff 0%, transparent 55%),
+    radial-gradient(48rem 46rem at 78% 96%,  #bf5af2 0%, transparent 58%),
+    radial-gradient(44rem 34rem at 18% 88%,  #00c7be 0%, transparent 56%),
+    radial-gradient(40rem 34rem at 52% 48%,  #ff375f 0%, transparent 62%);
+
+  --g-card:    linear-gradient(127.09deg, rgba(255,255,255,.13) 19.41%, rgba(255,255,255,.05) 76.65%);
+  --g-box:     linear-gradient(126.97deg, rgba(255,255,255,.11) 28.26%, rgba(255,255,255,.055) 91.2%);
+  --g-navbar:  linear-gradient(123.64deg, rgba(255,255,255,.02) -22.38%, rgba(255,255,255,.1) 70.38%);
+  --g-menu:    linear-gradient(126.97deg, rgba(255,255,255,.16) 28.26%, rgba(255,255,255,.07) 91.2%);
+  --g-primary: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+  --g-border:  radial-gradient(94.43% 69.43% at 50% 50%, rgba(255,255,255,.6) 0%, rgba(255,255,255,.08) 100%);
+
+  --head-bg: rgba(8,10,28,.86);
+  --sel-bg: rgba(10,132,255,.26);
+}
+
+/* Saturation is the active ingredient. Blur alone greys the backdrop out;
+   pushing saturation past 100% is what makes the colour bloom through. The
+   two inset strokes are the specular edge — bright along the top where light
+   would catch a curved face, faint along the bottom to read as thickness. */
+:root[data-theme="glass"] .vcard,
+:root[data-theme="glass"] .vbox,
+:root[data-theme="glass"] .topbar {
+  corner-shape: squircle;
+  backdrop-filter: blur(34px) saturate(190%) brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.3),
+    inset 0 -1px 0 rgba(255,255,255,.07),
+    0 14px 44px rgba(0,0,0,.42);
+}
+
+/* Refraction only on the two biggest surfaces. On a 34px tall table row it
+   costs a composited layer and returns nothing the eye can see. */
+:root[data-theme="glass"] aside.nav,
+:root[data-theme="glass"] .drawer {
+  backdrop-filter: url(#lens) blur(34px) saturate(190%) brightness(1.06);
+}
+
+/* The exception that keeps the table readable. */
+/* The radial border trick does not survive a translucent fill.
+   .vcard paints the card gradient clipped to padding-box OVER the border
+   gradient clipped to border-box; it only reads as a 1px edge because
+   Vision's fill is 94% opaque and hides the rest. Glass drops that fill to
+   ~10% white, so the white radial bled through the whole card face and the
+   stat labels measured 1.85:1 against white — illegible.
+
+   So glass uses a real border instead, and gets its bright top edge from the
+   inset specular highlight below. One image layer, tint on background-color
+   underneath it. */
+:root[data-theme="glass"] .vcard,
+:root[data-theme="glass"] .vbox,
+:root[data-theme="glass"] .topbar {
+  background-image: var(--g-card);
+  background-clip: padding-box;
+  border-color: rgba(255,255,255,.2);
+}
+:root[data-theme="glass"] .vcard  { background-color: rgba(7,9,26,.5); }
+:root[data-theme="glass"] .vbox   { background-color: rgba(7,9,26,.46); }
+:root[data-theme="glass"] .topbar { background-color: rgba(7,9,26,.42); }
+:root[data-theme="glass"] .navitem.on {
+  background-image: var(--g-card);
+  background-clip: padding-box;
+  background-color: rgba(255,255,255,.1);
+  border-color: rgba(255,255,255,.2);
+}
+:root[data-theme="glass"] .panel .tscroll { background: rgba(6,8,24,.62); }
+:root[data-theme="glass"] .navitem,
+:root[data-theme="glass"] .chip,
+:root[data-theme="glass"] .btn,
+:root[data-theme="glass"] .tag,
+:root[data-theme="glass"] .vbadge { corner-shape: squircle; }
+
+:root[data-theme="glass"] .v14 { background: rgba(255,159,10,.22);  color: #ffc46b; }
+:root[data-theme="glass"] .v17 { background: rgba(10,132,255,.26);  color: #7ab8ff; }
+:root[data-theme="glass"] .v19 { background: rgba(191,90,242,.26);  color: #d8a5ff; }
+
+/* ──────────────────────────────────────────────────────────────────────────
    FLAT — black and white done on its own terms.
 
    The Mono theme above is Vision UI with the hue removed, and it shows: the
@@ -226,7 +351,8 @@ body {
   font-family: var(--font-ui);
   font-size: 14px;
   color: var(--vu-text-focus);
-  background: var(--g-cover) fixed, var(--vu-body);
+  background-color: var(--vu-body);
+  background-image: var(--g-cover);
   overflow: hidden;
 }
 
@@ -342,7 +468,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; 
 /* ── Stat row ──────────────────────────────────────────────────────────── */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .stat { padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
-.stat .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--vu-text); white-space: nowrap; }
+.stat .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--vu-grey-400); white-space: nowrap; font-weight: 600; }
 .stat .v { font-size: 20px; font-weight: 700; letter-spacing: -.02em; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .stat .v small { font-size: 11.5px; font-weight: 500; color: var(--vu-text); margin-left: 5px; letter-spacing: 0; }
 .stat .icon { margin-left: auto; width: 40px; height: 40px; border-radius: var(--r-btn); background: var(--g-primary); display: grid; place-items: center; flex: none; }
@@ -429,6 +555,19 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 </head>
 <body>
 
+<!-- Edge lens. Two gradient ramps (x in red, y in green) summed by
+     feComposite, then feDisplacementMap. Chrome 149 supports an SVG filter
+     reference inside backdrop-filter, which is what makes real refraction
+     possible rather than a blur that only looks like it. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="lens" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feImage result="mx" preserveAspectRatio="none" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><defs><linearGradient id='h' x1='0' x2='1'><stop offset='0' stop-color='rgb(0,128,128)'/><stop offset='0.14' stop-color='rgb(128,128,128)'/><stop offset='0.86' stop-color='rgb(128,128,128)'/><stop offset='1' stop-color='rgb(255,128,128)'/></linearGradient></defs><rect width='400' height='300' fill='url(%23h)'/></svg>"/>
+    <feImage result="my" preserveAspectRatio="none" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><defs><linearGradient id='v' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='rgb(128,0,128)'/><stop offset='0.14' stop-color='rgb(128,128,128)'/><stop offset='0.86' stop-color='rgb(128,128,128)'/><stop offset='1' stop-color='rgb(128,255,128)'/></linearGradient></defs><rect width='400' height='300' fill='url(%23v)'/></svg>"/>
+    <feComposite in="mx" in2="my" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.5" result="map"/>
+    <feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" scale="28"/>
+  </filter>
+</svg>
+
 <div class="app">
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
@@ -471,7 +610,8 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
       <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
       <div class="grow"></div>
       <div class="chips" id="themes">
-        <div class="chip on" data-t="vision">Vision</div>
+        <div class="chip on" data-t="glass">Glass</div>
+        <div class="chip" data-t="vision">Vision</div>
         <div class="chip" data-t="mono">Mono</div>
         <div class="chip" data-t="flat">Flat</div>
       </div>

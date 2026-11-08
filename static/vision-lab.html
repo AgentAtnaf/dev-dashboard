@@ -227,7 +227,11 @@
 :root[data-theme="glass"] .vbox,
 :root[data-theme="glass"] .topbar {
   corner-shape: squircle;
-  backdrop-filter: blur(22px) saturate(190%) brightness(1.06);
+  /* Clear glass, not frosted. No blur anywhere on the chrome — the backdrop
+     reads through sharp, the way the reference's "Regular Glass" does. This
+     also removes the lens/blur conflict outright: with nothing averaging the
+     displacement away, refraction runs at full strength. */
+  backdrop-filter: url(#lens) saturate(165%) brightness(1.04);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.3),
     inset 0 -1px 0 rgba(255,255,255,.07),
@@ -260,29 +264,9 @@
 :root[data-theme="glass"] .odoo-state {
   backdrop-filter: url(#lens) saturate(195%) brightness(1.07);
 }
-:root[data-theme="glass"] aside.nav::before,
-:root[data-theme="glass"] .drawer::before,
-:root[data-theme="glass"] .topbar::before,
-:root[data-theme="glass"] .stat::before,
-:root[data-theme="glass"] .odoo-state::before {
-  content: "";
-  position: absolute;
-  inset: 14px;
-  border-radius: calc(var(--r-xl) - 8px);
-  corner-shape: squircle;
-  /* Negative z-index keeps it above the card's own background but below the
-     card's text, so nothing has to be re-stacked. The card already makes a
-     stacking context because it carries a backdrop-filter. */
-  z-index: -1;
-  backdrop-filter: blur(17px) saturate(115%);
-  /* Fade the blur in, or the inset boundary reads as a bevel. */
-  mask-image: radial-gradient(135% 135% at 50% 50%, #000 34%, transparent 99%);
-  pointer-events: none;
-}
-:root[data-theme="glass"] .topbar::before { inset: 9px; border-radius: 8px; }
-:root[data-theme="glass"] .stat::before   { inset: 10px; border-radius: 12px; }
-/* Small card, short fade distance — it showed the seam first. */
-:root[data-theme="glass"] .odoo-state::before { inset: 8px; border-radius: 9px; }
+/* The inset frosted interior is gone. It existed to let a blurred centre
+   coexist with a refracting rim; with clear glass there is no blur to place,
+   so the whole surface refracts and the backdrop stays sharp throughout. */
 
 /* Fresnel: a real edge goes bright because light grazing it reflects rather
    than passes through. Two stacked inset rings approximate the falloff. */
@@ -318,16 +302,16 @@
   background-clip: padding-box;
   border-color: rgba(255,255,255,.2);
 }
-:root[data-theme="glass"] .vcard  { background-color: rgba(7,9,26,.5); }
-:root[data-theme="glass"] .vbox   { background-color: rgba(7,9,26,.46); }
-:root[data-theme="glass"] .topbar { background-color: rgba(7,9,26,.42); }
+:root[data-theme="glass"] .vcard  { background-color: rgba(7,9,26,.62); }
+:root[data-theme="glass"] .vbox   { background-color: rgba(7,9,26,.58); }
+:root[data-theme="glass"] .topbar { background-color: rgba(7,9,26,.5); }
 :root[data-theme="glass"] .navitem.on {
   background-image: var(--g-card);
   background-clip: padding-box;
   background-color: rgba(255,255,255,.1);
   border-color: rgba(255,255,255,.2);
 }
-:root[data-theme="glass"] .panel .tscroll { background: rgba(6,8,24,.62); }
+:root[data-theme="glass"] .panel .tscroll { background: rgba(6,8,24,.82); }
 :root[data-theme="glass"] .navitem,
 :root[data-theme="glass"] .chip,
 :root[data-theme="glass"] .btn,
@@ -671,7 +655,7 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 
          So the refraction is one pass, and the colour fringe is faked with a
          CSS rim gradient below. Cheaper, and at a 1px edge indistinguishable. -->
-    <feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" scale="88"/>
+    <feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" scale="120"/>
   </filter>
 </svg>
 

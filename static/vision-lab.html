@@ -162,10 +162,15 @@
   --vu-body: #08080b;
 
   /* Apple system colours, dark-mode variants. */
-  --vu-brand: #0a84ff;
-  --vu-brand-focus: #409cff;
-  --vu-primary: #5e5ce6;
-  --vu-primary-focus: #7d7aff;
+  /* No accent hue. A saturated blue over a photograph is the one surface
+     left that is not made of glass, and it reads as pasted on. Controls go
+     neutral and colour is spent only where it carries meaning — status.
+     Two registers: things you act on are near-solid white with dark ink,
+     things that are merely decorative stay translucent. */
+  --vu-brand: rgba(255,255,255,.26);
+  --vu-brand-focus: rgba(255,255,255,.34);
+  --vu-primary: rgba(255,255,255,.26);
+  --vu-primary-focus: rgba(255,255,255,.4);
   --on-accent: #ffffff;
 
   --vu-success: #30d158;
@@ -208,11 +213,11 @@
   --g-box:     linear-gradient(126.97deg, rgba(255,255,255,.11) 28.26%, rgba(255,255,255,.055) 91.2%);
   --g-navbar:  linear-gradient(123.64deg, rgba(255,255,255,.02) -22.38%, rgba(255,255,255,.1) 70.38%);
   --g-menu:    linear-gradient(126.97deg, rgba(255,255,255,.16) 28.26%, rgba(255,255,255,.07) 91.2%);
-  --g-primary: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+  --g-primary: linear-gradient(135deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.12) 100%);
   --g-border:  radial-gradient(94.43% 69.43% at 50% 50%, rgba(255,255,255,.6) 0%, rgba(255,255,255,.08) 100%);
 
   --head-bg: rgba(8,10,28,.86);
-  --sel-bg: rgba(10,132,255,.26);
+  --sel-bg: rgba(255,255,255,.14);
 }
 
 /* Saturation is the active ingredient. Blur alone greys the backdrop out;
@@ -351,6 +356,31 @@
 :root[data-theme="glass"] .btn,
 :root[data-theme="glass"] .tag,
 :root[data-theme="glass"] .vbadge { corner-shape: squircle; }
+
+/* Acted on: a white chip with dark ink. Unmistakably selected, and the only
+   thing on the page bright enough to be read as "here". */
+:root[data-theme="glass"] .chip.on,
+:root[data-theme="glass"] #themes .chip.on,
+:root[data-theme="glass"] .btn:not(.ghost),
+:root[data-theme="glass"] .navitem.on .tile {
+  background: rgba(255,255,255,.93);
+  color: #0d0d10;
+  border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 2px 10px rgba(0,0,0,.3);
+}
+:root[data-theme="glass"] .navitem.on .tile svg { stroke: #0d0d10; }
+
+/* Decorative: stat tiles and the logo mark stay glass. They label, they are
+   not pressed, and making them white too would give the page four competing
+   bright spots. */
+:root[data-theme="glass"] .stat .icon,
+:root[data-theme="glass"] .brand .mark {
+  background: rgba(255,255,255,.14);
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3);
+  color: #fff;
+}
+:root[data-theme="glass"] .stat .icon svg { stroke: #fff; }
 
 :root[data-theme="glass"] .v14 { background: rgba(255,159,10,.22);  color: #ffc46b; }
 :root[data-theme="glass"] .v17 { background: rgba(10,132,255,.26);  color: #7ab8ff; }

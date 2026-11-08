@@ -77,7 +77,146 @@
   --font-ui: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --sidebar-w: 244px;
+
+  /* Surfaces that were hardcoded before the themes existed. */
+  --on-accent: #ffffff;        /* ink on an accent fill */
+  --head-bg: #0b1030;          /* sticky table header, must be opaque */
+  --sel-bg: rgba(0,117,255,.16);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   MONOCHROME
+
+   Glass does not need a hue. It needs luminance variation behind it — on a
+   flat black page there is nothing for it to pick up and it reads as a grey
+   box, so --g-cover still ramps #1c1c1e → #000.
+
+   What a hue was quietly doing was carrying pass/fail. Monochrome has one
+   channel left for that, brightness, so it is spent where it matters:
+   failures are pure white and bold, passes are dim grey. Scanning for red
+   among green becomes scanning for bright among dim, which is at least as
+   fast and survives colour blindness. Version badges use the same trick —
+   v19 brightest, v14 dimmest.
+   ────────────────────────────────────────────────────────────────────────── */
+:root[data-theme="mono"] {
+  /* Black and white means no hue. It does not mean no contrast — the first
+     attempt dropped text to #8b8b8b and card fills to 7% white, which reads
+     as washed out rather than crisp. Everything here is pushed back up:
+     brighter text, stronger surfaces, a harder border. */
+  --vu-body: #000000;
+  --vu-secondary: rgba(255,255,255,.08);
+  --vu-sidenav-btn: rgba(255,255,255,.11);
+
+  --vu-brand: #ffffff;
+  --vu-brand-focus: #ffffff;
+  --vu-primary: #ffffff;
+  --vu-primary-focus: #e4e4e4;
+  --on-accent: #000000;
+
+  /* Status keeps its hue. It is the one place colour is doing real work,
+     and desaturating it made the table harder to scan, not cleaner. */
+  --vu-success: #01b574;
+  --vu-success-focus: #35d28a;
+  --vu-warning: #ffb547;
+  --vu-error: #e31a1a;
+  --vu-error-focus: #ee5d50;
+
+  --vu-text: #b4b4b4;
+  --vu-text-focus: #ffffff;
+  --vu-border: rgba(255,255,255,.3);
+  --vu-border-navbar: rgba(255,255,255,.22);
+  --vu-grey-400: #c4c4c4;
+  --vu-grey-500: #8e8e8e;
+  --vu-grey-600: #5a5a5a;
+
+  --g-cover:  linear-gradient(159.02deg, #232326 14.25%, #121214 56.45%, #000000 86.14%);
+  --g-card:   linear-gradient(127.09deg, rgba(255,255,255,.11) 19.41%, rgba(255,255,255,.045) 76.65%);
+  --g-box:    linear-gradient(126.97deg, rgba(255,255,255,.09) 28.26%, rgba(255,255,255,.045) 91.2%);
+  --g-navbar: linear-gradient(123.64deg, rgba(255,255,255,0) -22.38%, rgba(255,255,255,.08) 70.38%);
+  --g-menu:   linear-gradient(126.97deg, rgba(255,255,255,.14) 28.26%, rgba(255,255,255,.06) 91.2%);
+  --g-primary: linear-gradient(97.89deg, #ffffff 0%, #d8d8d8 100%);
+  --g-border: radial-gradient(94.43% 69.43% at 50% 50%, rgba(255,255,255,.7) 0%, rgba(255,255,255,.06) 100%);
+
+  --head-bg: #0d0d0f;
+  --sel-bg: rgba(255,255,255,.16);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   FLAT — black and white done on its own terms.
+
+   The Mono theme above is Vision UI with the hue removed, and it shows: the
+   big cover gradient that gives the original its depth turns into a grey
+   smear once there is no colour in it. Washes only read as depth when they
+   are tinted.
+
+   So this one drops the device entirely. Flat near-black surfaces, uniform
+   1px hairlines instead of the radial fading border, tighter radii, no
+   gradient anywhere. Different lineage — Linear, Vercel — rather than a
+   drained Vision UI. Status keeps its colour here too.
+   ────────────────────────────────────────────────────────────────────────── */
+:root[data-theme="flat"] {
+  --vu-body: #000000;
+  --vu-secondary: #141414;
+  --vu-sidenav-btn: #1e1e1e;
+
+  --vu-brand: #ffffff;
+  --vu-brand-focus: #ffffff;
+  --vu-primary: #ffffff;
+  --vu-primary-focus: #e4e4e4;
+  --on-accent: #000000;
+
+  --vu-success: #30d158;
+  --vu-success-focus: #30d158;
+  --vu-warning: #ffd60a;
+  --vu-error: #ff453a;
+  --vu-error-focus: #ff453a;
+
+  --vu-text: #a1a1a1;
+  --vu-text-focus: #ffffff;
+  --vu-border: #2a2a2a;
+  --vu-border-navbar: #262626;
+  --vu-grey-400: #c9c9c9;
+  --vu-grey-500: #7d7d7d;
+  --vu-grey-600: #525252;
+
+  /* Flat fills, written as gradients only because the shell expects them. */
+  --g-cover:   linear-gradient(#000000, #000000);
+  --g-card:    linear-gradient(rgba(255,255,255,.035), rgba(255,255,255,.035));
+  --g-box:     linear-gradient(rgba(255,255,255,.05), rgba(255,255,255,.05));
+  --g-navbar:  linear-gradient(rgba(255,255,255,.035), rgba(255,255,255,.035));
+  --g-menu:    linear-gradient(rgba(255,255,255,.07), rgba(255,255,255,.07));
+  --g-primary: linear-gradient(#ffffff, #ffffff);
+  /* A hairline of one weight all the way round, not brightest in the middle. */
+  --g-border:  linear-gradient(rgba(255,255,255,.13), rgba(255,255,255,.13));
+
+  --head-bg: #0b0b0b;
+  --sel-bg: rgba(255,255,255,.1);
+
+  /* Softer corners belong to the glass look; flat wants them tighter. */
+  --r-xl: 12px;
+  --r-lg: 10px;
+  --r-btn: 8px;
+}
+/* Nothing to see through, so the blur is only costing frames. */
+:root[data-theme="flat"] .vcard,
+:root[data-theme="flat"] .vbox,
+:root[data-theme="flat"] .topbar { backdrop-filter: none; }
+:root[data-theme="flat"] .v14 { background: #1c1c1c; color: #9a9a9a; }
+:root[data-theme="flat"] .v17 { background: #2b2b2b; color: #d4d4d4; }
+:root[data-theme="flat"] .v19 { background: #3d3d3d; color: #ffffff; }
+:root[data-theme="flat"] .tag { background: #2b2b2b; color: #e0e0e0; }
+
+/* The glyph stays in the markup but is hidden while status keeps its hue —
+   a dot and a tick side by side say the same thing twice. One rule away if
+   a future theme drops colour again. */
+.st .g { display: none; font-weight: 800; font-size: 13px; line-height: 1; }
+
+/* Version badges still ride brightness — there is no hue to spare and the
+   ordering v19 > v17 > v14 is what the badge is for. */
+:root[data-theme="mono"] .v14 { background: rgba(255,255,255,.1);  color: #a8a8a8; }
+:root[data-theme="mono"] .v17 { background: rgba(255,255,255,.2);  color: #e0e0e0; }
+:root[data-theme="mono"] .v19 { background: rgba(255,255,255,.34); color: #ffffff; }
+:root[data-theme="mono"] .tag { background: rgba(255,255,255,.18); color: #ffffff; }
 
 * { box-sizing: border-box; }
 
@@ -127,7 +266,7 @@ aside.nav {
 .brand { display: flex; align-items: center; gap: 9px; padding: 2px 6px 16px; }
 .brand .mark {
   width: 26px; height: 26px; border-radius: 9px;
-  background: var(--g-primary);
+  background: var(--g-primary); color: var(--on-accent);
   display: grid; place-items: center;
   font-size: 13px; font-weight: 800;
 }
@@ -158,7 +297,7 @@ aside.nav {
   background-origin: border-box; background-clip: padding-box, border-box;
 }
 .navitem.on .tile { background: var(--vu-brand); }
-.navitem.on .tile svg { stroke: #fff; }
+.navitem.on .tile svg { stroke: var(--on-accent); }
 .navitem .count { margin-left: auto; font-size: 11px; color: var(--vu-grey-500); font-variant-numeric: tabular-nums; }
 
 /* Odoo state, promoted out of the corner. It is the thing you most often
@@ -172,7 +311,7 @@ aside.nav {
 .dot.down { background: var(--vu-grey-600); }
 .btn {
   border: 0; cursor: pointer; font-family: inherit; font-weight: 700; font-size: 12px;
-  padding: 8px 12px; border-radius: var(--r-btn); color: #fff; width: 100%;
+  padding: 8px 12px; border-radius: var(--r-btn); color: var(--on-accent); width: 100%;
   background: var(--g-primary);
 }
 .btn.ghost { background: rgba(255,255,255,.08); border: 1px solid var(--vu-border-navbar); }
@@ -207,7 +346,7 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; 
 .stat .v { font-size: 20px; font-weight: 700; letter-spacing: -.02em; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .stat .v small { font-size: 11.5px; font-weight: 500; color: var(--vu-text); margin-left: 5px; letter-spacing: 0; }
 .stat .icon { margin-left: auto; width: 40px; height: 40px; border-radius: var(--r-btn); background: var(--g-primary); display: grid; place-items: center; flex: none; }
-.stat .icon svg { width: 17px; height: 17px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.stat .icon svg { width: 17px; height: 17px; stroke: var(--on-accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ── Panel + dense table ───────────────────────────────────────────────── */
 .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -220,13 +359,17 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; 
   font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; cursor: pointer;
   color: var(--vu-text); background: rgba(255,255,255,.05); border: 1px solid transparent;
 }
-.chip.on { color: #fff; background: var(--vu-brand); }
+.chip.on { color: var(--on-accent); background: var(--vu-brand); }
+/* The topbar's own highlight gradient runs straight under these, so the
+   inactive ones need more than the panel chips to stay legible. */
+#themes .chip { background: rgba(255,255,255,.09); border-color: var(--vu-border-navbar); }
+#themes .chip.on { background: var(--vu-brand); border-color: transparent; }
 
 .tscroll { flex: 1; min-height: 0; overflow: auto; }
 table.dense { width: 100%; border-collapse: collapse; }
 table.dense thead th {
   position: sticky; top: 0; z-index: 2;
-  background: #0b1030;
+  background: var(--head-bg);
   text-align: left; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
   color: var(--vu-grey-500); font-weight: 700;
   padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.08);
@@ -239,7 +382,7 @@ table.dense tbody td {
 }
 table.dense tbody tr { cursor: pointer; }
 table.dense tbody tr:hover td { background: rgba(255,255,255,.045); }
-table.dense tbody tr.sel td { background: rgba(0,117,255,.16); }
+table.dense tbody tr.sel td { background: var(--sel-bg); }
 .mono { font-family: var(--font-mono); font-size: 12px; }
 .muted { color: var(--vu-text); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -327,6 +470,11 @@ table.dense tbody tr.sel td { background: rgba(0,117,255,.16); }
     <div class="topbar">
       <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
       <div class="grow"></div>
+      <div class="chips" id="themes">
+        <div class="chip on" data-t="vision">Vision</div>
+        <div class="chip" data-t="mono">Mono</div>
+        <div class="chip" data-t="flat">Flat</div>
+      </div>
       <div class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="q" placeholder="Filter flow, database, task…">
@@ -351,7 +499,7 @@ table.dense tbody tr.sel td { background: rgba(0,117,255,.16); }
           <h2>Run history</h2>
           <span class="sub" id="shown">—</span>
           <div class="grow"></div>
-          <div class="chips">
+          <div class="chips" id="filters">
             <div class="chip on" data-f="all">All</div>
             <div class="chip" data-f="failed">Failed</div>
             <div class="chip" data-f="passed">Passed</div>
@@ -409,7 +557,7 @@ table.dense tbody tr.sel td { background: rgba(0,117,255,.16); }
 <div class="drawer vcard" id="drawer">
   <div class="close" onclick="closeDrawer()">✕</div>
   <h3 id="dr-name">—</h3>
-  <div class="st" id="dr-status"><span class="d"></span><span></span></div>
+  <div class="st" id="dr-status"><span class="d"></span><span class="g"></span><span></span></div>
   <dl class="kv" id="dr-kv"></dl>
   <div class="acts">
     <button class="btn" id="dr-trace">Open trace</button>
@@ -436,6 +584,8 @@ const ago = iso => {
 };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const stCls = s => s === 'passed' ? 'pass' : s === 'failed' ? 'fail' : 'unk';
+// Monochrome has no hue to spend on status, so it uses these instead.
+const stGly = s => s === 'passed' ? '\u2713' : s === 'failed' ? '\u2715' : '\u00b7';
 
 /* ── Flows ──────────────────────────────────────────────────────────────── */
 async function loadRuns() {
@@ -482,7 +632,7 @@ function renderRuns() {
     : rows.length + ' of ' + RUNS.length + ' loaded';
   $('#runs').innerHTML = rows.length ? rows.map((r, i) => `
     <tr data-i="${i}">
-      <td><span class="st ${stCls(r.status)}"><span class="d"></span>${esc(r.status || 'unknown')}</span></td>
+      <td><span class="st ${stCls(r.status)}"><span class="d"></span><span class="g">${stGly(r.status)}</span>${esc(r.status || 'unknown')}</span></td>
       <td class="mono">${esc(r.flow_name)}${r.safe_to_delete ? ' <span class="tag">safe to delete</span>' : ''}</td>
       <td class="mono muted">${esc(r.db_name || '—')}</td>
       <td class="mono muted">${esc(r.task_number || '—')}</td>
@@ -504,6 +654,7 @@ function openDrawer(r) {
   $('#dr-name').textContent = r.flow_name;
   const s = $('#dr-status');
   s.className = 'st ' + stCls(r.status);
+  s.querySelector('.g').textContent = stGly(r.status);
   s.lastElementChild.textContent = r.status || 'unknown';
   $('#dr-kv').innerHTML = `
     <dt>Database</dt><dd class="mono">${esc(r.db_name || '—')}</dd>
@@ -585,7 +736,7 @@ document.querySelectorAll('.navitem').forEach(it => {
   };
 });
 
-document.querySelectorAll('.chip').forEach(c => {
+document.querySelectorAll('#filters .chip').forEach(c => {
   c.onclick = () => {
     document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
     c.classList.add('on');
@@ -593,6 +744,19 @@ document.querySelectorAll('.chip').forEach(c => {
     renderRuns();
   };
 });
+
+document.querySelectorAll('#themes .chip').forEach(c => {
+  c.onclick = () => {
+    document.querySelectorAll('#themes .chip').forEach(x => x.classList.remove('on'));
+    c.classList.add('on');
+    document.documentElement.dataset.theme = c.dataset.t;
+    try { localStorage.setItem('vision-lab-theme', c.dataset.t); } catch {}
+  };
+});
+try {
+  const saved = localStorage.getItem('vision-lab-theme');
+  if (saved) document.querySelector(`#themes .chip[data-t="${saved}"]`)?.click();
+} catch {}
 
 $('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); renderRuns(); });
 addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });

@@ -159,7 +159,7 @@
    depends on. Shell is glass, dense data sits on a scrim.
    ────────────────────────────────────────────────────────────────────────── */
 :root[data-theme="glass"] {
-  --vu-body: #05060f;
+  --vu-body: #08080b;
 
   /* Apple system colours, dark-mode variants. */
   --vu-brand: #0a84ff;
@@ -197,16 +197,12 @@
      Set it to `none` and the mesh alone still works. */
   --bg-photo: url('/static/bg/bg7.jpg');
 
-  /* The rulings are gone. They existed to give the lens something to bend
-     when there was no photo; a 4000x3000 accretion disc does that far
-     better, and with structure at every scale the blur cannot erase. */
-  --g-cover:
-    radial-gradient(62rem 44rem at 10% 2%,   #4318ff 0%, transparent 58%),
-    radial-gradient(52rem 42rem at 92% 12%,  #0a84ff 0%, transparent 55%),
-    radial-gradient(48rem 46rem at 78% 96%,  #bf5af2 0%, transparent 58%),
-    radial-gradient(44rem 34rem at 18% 88%,  #00c7be 0%, transparent 56%),
-    radial-gradient(40rem 34rem at 52% 48%,  #ff375f 0%, transparent 62%),
-    var(--bg-photo);
+  /* No mesh. The photograph is the entire backdrop — nothing tinting it,
+     nothing blended over it. The glass borrows whatever the photo gives it,
+     which on a dark forest is near-neutral, and that is the point. Text and
+     status colours are untouched; the only colour removed is the colour that
+     was being injected behind the glass. */
+  --g-cover: var(--bg-photo);
 
   --g-card:    linear-gradient(127.09deg, rgba(255,255,255,.13) 19.41%, rgba(255,255,255,.05) 76.65%);
   --g-box:     linear-gradient(126.97deg, rgba(255,255,255,.11) 28.26%, rgba(255,255,255,.055) 91.2%);
@@ -231,7 +227,7 @@
      reads through sharp, the way the reference's "Regular Glass" does. This
      also removes the lens/blur conflict outright: with nothing averaging the
      displacement away, refraction runs at full strength. */
-  backdrop-filter: url(#lens) saturate(165%) brightness(1.04);
+  backdrop-filter: url(#lens) saturate(118%) brightness(1.04);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.3),
     inset 0 -1px 0 rgba(255,255,255,.07),
@@ -262,7 +258,7 @@
 :root[data-theme="glass"] .topbar,
 :root[data-theme="glass"] .stat,
 :root[data-theme="glass"] .odoo-state {
-  backdrop-filter: url(#lens) saturate(195%) brightness(1.07);
+  backdrop-filter: url(#lens) saturate(118%) brightness(1.05);
 }
 /* The inset frosted interior is gone. It existed to let a blurred centre
    coexist with a refracting rim; with clear glass there is no blur to place,
@@ -302,16 +298,16 @@
   background-clip: padding-box;
   border-color: rgba(255,255,255,.2);
 }
-:root[data-theme="glass"] .vcard  { background-color: rgba(7,9,26,.62); }
-:root[data-theme="glass"] .vbox   { background-color: rgba(7,9,26,.58); }
-:root[data-theme="glass"] .topbar { background-color: rgba(7,9,26,.5); }
+:root[data-theme="glass"] .vcard  { background-color: rgba(9,9,12,.62); }
+:root[data-theme="glass"] .vbox   { background-color: rgba(9,9,12,.58); }
+:root[data-theme="glass"] .topbar { background-color: rgba(9,9,12,.5); }
 :root[data-theme="glass"] .navitem.on {
   background-image: var(--g-card);
   background-clip: padding-box;
   background-color: rgba(255,255,255,.1);
   border-color: rgba(255,255,255,.2);
 }
-:root[data-theme="glass"] .panel .tscroll { background: rgba(6,8,24,.82); }
+:root[data-theme="glass"] .panel .tscroll { background: rgba(8,8,11,.82); }
 :root[data-theme="glass"] .navitem,
 :root[data-theme="glass"] .chip,
 :root[data-theme="glass"] .btn,
@@ -409,13 +405,9 @@ body {
   color: var(--vu-text-focus);
   background-color: var(--vu-body);
   background-image: var(--g-cover);
-  /* Five mesh layers at natural size, then the photo covering beneath them.
-     `screen` lets each blob lift the photo's blacks to its own hue while
-     leaving the bright disc bright — tint without hiding the structure. */
-  background-size: auto, auto, auto, auto, auto, cover;
+  background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  background-blend-mode: screen, screen, screen, screen, screen, normal;
   overflow: hidden;
 }
 

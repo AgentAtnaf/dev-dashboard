@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dev Dashboard</title>
+<script src="/vendor/tailwind.js"></script>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<script src="/vendor/mermaid.min.js"></script>
+<script>
+  tailwind.config = { darkMode: 'class' };
+  mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+  marked.setOptions({ gfm: true, breaks: true });
+</script>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="dark">
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header class="bg-gray-800 border-b border-gray-700 px-4 h-[52px] flex items-center gap-4 shrink-0">
+  <span class="font-bold text-orange-400 text-sm tracking-wide">⚙ Dev Dashboard</span>
+  <nav class="flex gap-1">
+    <button class="tab-btn active" onclick="showTab('sessions')" id="tab-sessions">Sessions</button>
+    <button class="tab-btn" onclick="showTab('databases')" id="tab-databases">Databases</button>
+    <button class="tab-btn" onclick="showTab('make')" id="tab-make">Make</button>
+    <button class="tab-btn" onclick="showTab('board')" id="tab-board">Board</button>
+    <button class="tab-btn" onclick="showTab('flows')" id="tab-flows">Flows</button>
+  </nav>
+  <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+    <span class="w-2 h-2 rounded-full dot-gray" id="odoo-dot"></span>
+    <span id="odoo-status-text">Odoo: checking…</span>
+    <button onclick="refreshOdooStatus()" title="Refresh Odoo status" class="ml-1 text-gray-500 hover:text-gray-200 transition-colors">⟳</button>
+    <a href="http://192.168.64.3:8069" target="_blank" class="ml-1 text-blue-400 hover:underline">Open Odoo ↗</a>
+  </div>
+</header>
+
+<!-- ── Tab: Sessions ────────────────────────────────────────────────────────── -->
+<div id="panel-sessions" class="panel active p-4 gap-3">
+  <div class="flex items-center gap-3 shrink-0">
+    <input type="text" id="session-search" placeholder="Search title or task number…" class="w-72" oninput="filterSessions()">
+    <button onclick="loadSessions()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺ Refresh</button>
+    <span class="text-xs text-gray-500" id="session-count"></span>
+  </div>
+  <div class="flex-1 overflow-auto rounded-lg border border-gray-700">
+    <table class="w-full text-sm" id="sessions-table">
+      <thead class="bg-gray-800 sticky top-0">
+        <tr>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-32">Date</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300">Title</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-28">Project</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-36">Task #</th>
+          <th class="text-left px-3 py-2 font-semibold text-gray-300 w-52">Notes</th>
+          <th class="w-16 px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody id="sessions-tbody">
+        <tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">Loading sessions…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Tab: Databases ────────────────────────────────────────────────────────── -->
+<div id="panel-databases" class="panel p-4 gap-4">
+  <div class="flex items-center gap-2 shrink-0 flex-wrap">
+    <h2 class="font-semibold">PostgreSQL Databases</h2>
+    <button onclick="loadDatabases()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺ Refresh</button>
+    <button onclick="openProfileModal()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">✎ Edit Profiles</button>
+    <button onclick="toggleOdooLog()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm" id="odoo-log-btn">≡ Log</button>
+    <button onclick="startOdoo()" id="start-odoo-btn" class="hidden px-3 py-1.5 bg-green-900/70 hover:bg-green-900 text-green-300 rounded text-sm">▶ Start Odoo</button>
+    <button onclick="restartOdoo()" id="restart-odoo-btn" class="hidden px-3 py-1.5 bg-yellow-900/70 hover:bg-yellow-900 text-yellow-300 rounded text-sm">↺ Restart Odoo</button>
+    <button onclick="stopOdoo()" id="stop-odoo-btn" class="hidden px-3 py-1.5 bg-red-900/70 hover:bg-red-900 text-red-300 rounded text-sm">■ Stop Odoo</button>
+    <div class="ml-auto flex items-center gap-2 text-sm">
+      <span class="w-2 h-2 rounded-full" id="db-odoo-dot"></span>
+      <span id="db-odoo-status" class="text-gray-400">Checking…</span>
+    </div>
+  </div>
+  <!-- Odoo live log panel (hidden by default) -->
+  <div id="odoo-log-panel" class="hidden shrink-0 bg-gray-950 border border-gray-700 rounded-lg overflow-hidden" style="height:200px">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700 bg-gray-900">
+      <span class="text-xs font-semibold text-blue-400">Odoo Log</span>
+      <span class="text-xs text-gray-600 font-mono truncate" id="odoo-log-path-label"></span>
+      <button onclick="restartOdooLog()" class="text-xs text-gray-500 hover:text-gray-300 ml-1">↺</button>
+      <button onclick="toggleOdooLog()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">✕</button>
+    </div>
+    <div class="overflow-y-auto p-2" style="height:calc(200px - 34px)" id="odoo-log-scroll">
+      <pre class="make-output text-blue-200 text-xs" id="odoo-log-text"></pre>
+    </div>
+  </div>
+  <p class="text-xs text-gray-500 shrink-0">Click Switch on a database card to change Odoo's active DB and restart. Green border = current active.</p>
+  <div id="db-grid" class="grid grid-cols-3 gap-3 content-start overflow-y-auto">
+    <div class="col-span-3 text-center text-gray-500 py-8">Loading…</div>
+  </div>
+</div>
+
+<!-- ── Tab: Make ─────────────────────────────────────────────────────────────── -->
+<div id="panel-make" class="panel p-4 gap-4">
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="font-semibold">Makefile Runner</h2>
+    <span class="text-xs text-gray-500">Working dir: /home/server/odoo-17.0</span>
+    <div class="ml-auto flex gap-2">
+      <button onclick="toggleLineLog()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm" id="line-log-btn">LINE Log</button>
+    </div>
+  </div>
+  <!-- LINE live log panel (hidden by default) -->
+  <div id="line-log-panel" class="hidden shrink-0 bg-gray-950 border border-gray-700 rounded-lg overflow-hidden" style="height:180px">
+    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700 bg-gray-900">
+      <span class="text-xs font-semibold text-green-400">LINE Service Log</span>
+      <select id="line-log-source" class="text-xs h-6 ml-1" onchange="restartLineLog()">
+        <option value="uvicorn">uvicorn</option>
+        <option value="ngrok">ngrok</option>
+      </select>
+      <button onclick="restartLineLog()" class="text-xs text-gray-500 hover:text-gray-300 ml-1">↺</button>
+      <button onclick="toggleLineLog()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">✕</button>
+    </div>
+    <div class="h-full overflow-y-auto p-2" id="line-log-scroll">
+      <pre class="make-output text-green-300 text-xs" id="line-log-text"></pre>
+    </div>
+  </div>
+  <div class="flex flex-1 overflow-hidden" id="make-split">
+    <!-- Targets -->
+    <div class="flex-1 overflow-y-auto space-y-4 pr-2 min-w-0" id="make-targets">
+      <div class="text-center text-gray-500 py-8">Loading targets…</div>
+    </div>
+    <!-- Drag handle -->
+    <div id="make-resize-handle" style="width:6px;cursor:col-resize;flex-shrink:0;background:transparent;border-left:2px solid #374151;margin:0 2px" title="Drag to resize"></div>
+    <!-- Output panel -->
+    <div id="make-output-panel" style="width:420px;min-width:200px;max-width:80%;flex-shrink:0;display:flex;flex-direction:column;background:#030712;border:1px solid #374151;border-radius:8px;overflow:hidden">
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-900" id="make-output-header">
+        <span class="text-xs font-mono text-gray-400" id="make-output-cmd">Output</span>
+        <button onclick="copyMakeOutput()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">Copy</button>
+        <button onclick="clearMakeOutput()" class="text-xs text-gray-500 hover:text-gray-300">Clear</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3" id="make-output-scroll">
+        <pre class="make-output text-gray-300" id="make-output-text">Run a make target to see output here.</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Board ─────────────────────────────────────────────────────────────── -->
+<div id="panel-board" class="panel p-4 gap-4">
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="font-semibold">Explanation Board</h2>
+    <span class="text-xs text-gray-500">Save tables, diagrams, and flowcharts from your sessions</span>
+    <button onclick="openAddBoardModal()" class="ml-auto px-3 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-sm">+ New Explanation</button>
+    <button onclick="loadBoard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">↺</button>
+  </div>
+  <div class="flex-1 overflow-y-auto">
+    <div id="board-grid" class="grid gap-4" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr))">
+      <div class="text-center text-gray-500 py-12 col-span-full">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Board: Add Modal ─────────────────────────────────────────────────────── -->
+<div id="board-add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60;align-items:center;justify-content:center;">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl flex flex-col" style="width:700px;max-height:85vh;">
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold" id="board-modal-title">New Explanation</span>
+      <button onclick="closeBoardAddModal()" class="ml-auto text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+      <div class="flex gap-4">
+        <div class="flex-1">
+          <label class="block text-xs text-gray-400 mb-1">Title</label>
+          <input id="board-new-title" type="text" placeholder="e.g. Discount Flow" class="w-full">
+        </div>
+        <div class="w-36">
+          <label class="block text-xs text-gray-400 mb-1">Task # <span class="text-gray-600">(opt)</span></label>
+          <input id="board-new-task" type="text" placeholder="T26-12345" class="w-full">
+        </div>
+        <div class="w-40">
+          <label class="block text-xs text-gray-400 mb-1">Type</label>
+          <select id="board-new-type" class="w-full" onchange="updateBoardTypeHint()">
+            <option value="mermaid">Mermaid Diagram</option>
+            <option value="markdown">Markdown / Table</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1">Content <span id="board-type-hint" class="text-gray-500">(mermaid flowchart / sequenceDiagram / etc.)</span></label>
+        <textarea id="board-new-content" rows="14" class="w-full font-mono text-sm" placeholder="graph TD&#10;  A[Start] --> B[End]"></textarea>
+      </div>
+      <div id="board-preview-wrap" class="hidden">
+        <label class="block text-xs text-gray-400 mb-1">Preview</label>
+        <div id="board-preview-content" class="bg-gray-900 rounded p-4 prose prose-invert min-h-[80px] overflow-x-auto"></div>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="previewBoardContent()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm">Preview</button>
+        <button onclick="saveBoardItem()" class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-semibold">Save</button>
+        <button onclick="closeBoardAddModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Board: Expand Modal ─────────────────────────────────────────────────── -->
+<div id="board-expand-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:60;align-items:center;justify-content:center;" onclick="if(event.target===this)closeBoardExpandModal()">
+  <div class="bg-gray-800 border border-gray-700 shadow-2xl flex flex-col" style="width:96vw;height:94vh;border-radius:12px;">
+    <!-- Header -->
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold truncate" id="board-expand-title"></span>
+      <span class="text-xs px-2 py-0.5 rounded-full shrink-0" id="board-expand-type-badge"></span>
+      <!-- Zoom controls (mermaid only) -->
+      <div id="board-zoom-controls" class="hidden ml-4 flex items-center gap-1">
+        <button onclick="boardZoom(-0.2)" class="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold" title="Zoom out">−</button>
+        <button onclick="boardZoomFit()" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs" id="board-zoom-label" title="Reset zoom">100%</button>
+        <button onclick="boardZoom(+0.2)" class="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold" title="Zoom in">+</button>
+        <button onclick="boardZoomFit()" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs ml-1" title="Fit to window">Fit</button>
+      </div>
+      <button onclick="closeBoardExpandModal()" class="ml-auto shrink-0 text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <!-- Content -->
+    <div class="flex-1 overflow-auto p-5" id="board-expand-scroll" style="cursor:default">
+      <div id="board-expand-content" class="prose prose-invert" style="transform-origin:top left;transition:transform 0.15s"></div>
+    </div>
+    <!-- Footer -->
+    <div class="px-5 py-2 border-t border-gray-700 flex items-center gap-3 shrink-0 text-xs text-gray-500">
+      <span id="board-expand-session"></span>
+      <span id="board-expand-task"></span>
+      <span id="board-expand-date" class="ml-auto"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Addons Profile Editor Modal ───────────────────────────────────────────── -->
+<div id="profile-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:60;align-items:center;justify-content:center;">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-2xl flex flex-col" style="width:680px;max-height:80vh;">
+    <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-700 shrink-0">
+      <span class="font-semibold">Edit Addons Path Profiles</span>
+      <span class="text-xs text-gray-500">Changes take effect on next DB switch</span>
+      <button onclick="closeProfileModal()" class="ml-auto text-gray-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Profile list — populated by renderProfileTabs() -->
+      <div class="w-36 shrink-0 border-r border-gray-700 p-2 flex flex-col gap-1 overflow-y-auto" id="profile-tabs"></div>
+      <!-- Path editor -->
+      <div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
+        <div class="flex items-center gap-2">
+          <span class="font-mono font-semibold text-sm" id="profile-editor-title"></span>
+          <button onclick="resetProfileToDefault()" class="ml-auto text-xs text-gray-500 hover:text-yellow-400">Reset to default</button>
+        </div>
+        <div id="profile-paths-list" class="flex flex-col gap-1"></div>
+        <!-- Add path row -->
+        <div class="flex gap-2 mt-1">
+          <input type="text" id="new-path-input" class="flex-1 text-xs" placeholder="/home/server/odoo-17.0/…"
+            onkeydown="if(event.key==='Enter') addProfilePath()">
+          <button onclick="addProfilePath()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ Add path</button>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-gray-700">
+          <button onclick="saveCurrentProfile()" class="px-4 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-sm font-medium">Save profile</button>
+          <span id="profile-save-status" class="text-xs text-green-400 self-center hidden">Saved!</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Flows Panel ───────────────────────────────────────────────────────────── -->
+<div id="panel-flows" class="panel p-4 gap-4">
+  <div class="flex items-center gap-2 shrink-0 flex-wrap">
+    <h2 class="font-semibold">Playwright Flows · Run history</h2>
+    <button onclick="loadFlows()" class="px-3 py-1.5 bg-gray-700 rounded text-sm">↻ Refresh</button>
+    <span class="text-xs text-gray-500">New runs appear automatically. Older traces without reports have an unknown result.</span>
+  </div>
+  <div class="flex flex-col lg:flex-row gap-3 min-h-0 flex-1">
+    <aside class="flex flex-col gap-2 overflow-y-auto shrink-0 w-full lg:w-72">
+      <input type="text" id="flow-search" placeholder="Find flow, task or database…" aria-label="Find flows" oninput="filterFlows()">
+      <button onclick="selectFlow(null)" class="text-left px-3 py-2 bg-gray-800 rounded">All runs</button>
+      <div id="flow-list" class="flex flex-col gap-1"></div>
+    </aside>
+    <div id="flow-history-content" class="flex-1 flex flex-col min-w-0 gap-3 overflow-y-auto">
+      <div class="flex gap-3 items-center flex-wrap">
+        <h3 id="flow-history-title" class="font-semibold">All runs</h3>
+        <select id="flow-status-filter" aria-label="Filter run status" onchange="loadFlowRuns(true)" class="ml-auto bg-gray-800 rounded px-2 py-1">
+          <option value="">All results</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="running">Running</option><option value="stale">No recent update</option><option value="unknown">Unknown result</option>
+        </select>
+      </div>
+      <p id="flow-history-message" class="text-xs text-gray-400" role="status"></p>
+      <div class="flex gap-3 items-center flex-wrap text-xs">
+        <span id="flow-tag-summary" class="text-amber-200" role="status"></span>
+        <button id="flow-purge-button" type="button" onclick="purgeTaggedTraces()"
+                class="hidden bg-amber-800 hover:bg-amber-700 rounded px-2 py-1">Delete tagged traces</button>
+      </div>
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+        <div class="flex flex-col gap-2">
+          <div id="flow-run-list" class="flex flex-col gap-2"></div>
+          <div class="flex gap-2"><button id="flow-runs-prev" class="bg-gray-800 px-3 py-1 rounded disabled:opacity-40" onclick="pageFlowRuns(-1)">Previous</button><button id="flow-runs-next" class="bg-gray-800 px-3 py-1 rounded disabled:opacity-40" onclick="pageFlowRuns(1)">Next</button></div>
+        </div>
+        <div id="flow-run-detail" class="bg-gray-950 rounded-lg border border-gray-700 p-4 min-w-0"><p class="text-gray-500">Select a run to inspect its steps and captured flow.</p></div>
+      </div>
+      <details id="flow-definition" class="hidden bg-gray-950 rounded-lg border border-gray-700 p-3">
+        <summary class="cursor-pointer text-sm">Current saved flow definition</summary>
+        <div id="flow-preview-header" class="flex gap-2 my-2">
+          <button onclick="copyFlowContent()" class="px-3 py-1 bg-blue-800 rounded text-xs">Copy</button>
+          <button onclick="saveFlowToFile()" class="px-3 py-1 bg-gray-700 rounded text-xs">Download</button>
+          <button onclick="deleteSelectedFlow()" class="px-3 py-1 bg-red-900 rounded text-xs">Delete definition</button>
+        </div>
+        <pre id="flow-preview-content" class="text-xs whitespace-pre-wrap break-words"></pre>
+      </details>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Modal ─────────────────────────────────────────────────────────── -->
+<div id="modal">
+  <div class="bg-gray-800 rounded-xl border border-gray-700 p-6 w-[420px] shadow-2xl">
+    <h3 class="font-semibold text-lg mb-2" id="modal-title">Confirm</h3>
+    <p class="text-sm text-gray-300 mb-3" id="modal-body"></p>
+    <!-- Odoo version selector (shown only for DB switch) -->
+    <div id="modal-version-row" class="hidden mb-4 p-3 bg-gray-900 rounded-lg border border-gray-700">
+      <label class="text-xs text-gray-400 block mb-1">Start with Odoo version:</label>
+      <select id="modal-odoo-version" class="w-full text-sm"></select>
+      <p id="modal-version-warn" class="text-xs text-yellow-400 mt-1 hidden"></p>
+    </div>
+    <div class="flex gap-3 justify-end">
+      <button onclick="closeModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">Cancel</button>
+      <button onclick="modalConfirm()" id="modal-ok" class="px-4 py-2 bg-blue-700 hover:bg-blue-600 rounded text-sm font-medium">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script src="/failure-summary.js"></script>
+<script src="/flows.js"></script>
+</body>
+</html>

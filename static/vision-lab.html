@@ -700,6 +700,35 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 .pbtn:hover:not(:disabled) { background: rgba(255,255,255,.16); }
 .pbtn:disabled { opacity: .3; cursor: default; }
 #pageinfo { font-variant-numeric: tabular-nums; min-width: 190px; text-align: center; }
+/* ── Modal + toast ─────────────────────────────────────────────────────── */
+.modal { position: fixed; inset: 0; z-index: 60; display: none;
+  align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+.modal.open { display: flex; }
+.modal-box { width: min(760px, 92vw); max-height: 86vh; display: flex; flex-direction: column;
+  padding: 20px 22px; gap: 12px; }
+.modal-box h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.modal-box label { display: block; font-size: 10.5px; letter-spacing: .09em; font-weight: 700;
+  text-transform: uppercase; color: var(--vu-grey-500); margin-bottom: 5px; }
+.modal-box input, .modal-box select, .modal-box textarea { width: 100%; }
+.modal-box textarea { min-height: 260px; resize: vertical; font-family: var(--font-mono);
+  font-size: 12.5px; line-height: 1.5; }
+.modal-row { display: flex; gap: 12px; }
+.modal-row > div { flex: 1; min-width: 0; }
+.modal-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+.toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(14px);
+  z-index: 70; padding: 10px 18px; border-radius: 12px; corner-shape: squircle;
+  font-size: 12.5px; font-weight: 600; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s;
+  background: rgba(16,16,22,.92); border: 1px solid rgba(255,255,255,.2); color: #fff; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.bad { border-color: rgba(255,69,58,.6); color: #ff9d96; }
+.iconbtn { font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 4px 10px;
+  border-radius: 8px; corner-shape: squircle; color: var(--vu-text-focus);
+  background: rgba(255,255,255,.09); border: 1px solid var(--vu-border-navbar); }
+.iconbtn:hover { background: rgba(255,255,255,.2); }
+.iconbtn.danger:hover { background: rgba(255,69,58,.28); border-color: rgba(255,69,58,.5); }
+table.dense tbody tr.clickable:hover td { background: rgba(255,255,255,.08); }
+
 .split { display: flex; gap: 14px; flex: 1; min-height: 0; }
 .split > .panel { min-width: 0; }
 
@@ -869,7 +898,7 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
     <div class="topbar">
       <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
       <div class="grow"></div>
-      <select id="bgpick" title="Backdrop">
+      <select id="bgpick" title="Backdrop" aria-label="Backdrop image">
         <option value="auto">Auto · rotate</option>
         <option value="bg7">7 · Tall trees ▲</option>
         <option value="bg1">1 · Misty ridge</option>
@@ -889,7 +918,7 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
       </div>
       <div class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="q" placeholder="Filter flow, database, task…">
+        <input id="q" aria-label="Filter runs" placeholder="Filter flow, database, task…">
       </div>
     </div>
 
@@ -911,6 +940,7 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
           <h2>Run history</h2>
           <span class="sub" id="shown">—</span>
           <div class="grow"></div>
+          <button class="iconbtn danger" id="purge" style="display:none"></button>
           <div class="chips" id="filters">
             <div class="chip on" data-f="all">All</div>
             <div class="chip" data-f="failed">Failed</div>
@@ -993,11 +1023,11 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
     <div class="view" id="v-board">
       <div class="split">
         <div class="panel vcard" style="flex:0 0 330px">
-          <header><h2>Explanations</h2><span class="sub" id="board-sub">—</span></header>
+          <header><h2>Explanations</h2><span class="sub" id="board-sub">—</span><div class="grow"></div><button class="iconbtn" id="board-new">+ New</button></header>
           <div class="blist" id="board-list"></div>
         </div>
         <div class="panel vcard">
-          <header><h2 id="board-title">Select an explanation</h2><span class="sub" id="board-meta"></span></header>
+          <header><h2 id="board-title">Select an explanation</h2><span class="sub" id="board-meta"></span><div class="grow"></div><button class="iconbtn" id="board-edit" style="display:none">Edit</button><button class="iconbtn danger" id="board-del" style="display:none">Delete</button></header>
           <div class="bcontent"><div class="prose" id="board-body">
             <div class="empty">74 saved explanations. Pick one on the left.</div>
           </div></div>
@@ -1024,6 +1054,18 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
 </div>
 
 <!-- ── Run detail drawer ───────────────────────────────────────────────────── -->
+<div class="modal" id="modal">
+  <div class="modal-box vcard">
+    <h3 id="m-title">Edit</h3>
+    <div id="m-fields"></div>
+    <div class="modal-acts">
+      <button class="iconbtn" id="m-cancel">Cancel</button>
+      <button class="btn" id="m-save" style="width:auto;padding:8px 20px">Save</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
 <div class="drawer vcard" id="drawer">
   <div class="close" onclick="closeDrawer()">✕</div>
   <h3 id="dr-name">—</h3>
@@ -1083,6 +1125,7 @@ async function loadRuns() {
   } catch { $('#s-tag').textContent = '—'; }
 
   renderRuns();
+  refreshPurge();
 }
 
 function visibleRuns() {
@@ -1136,6 +1179,7 @@ const goPage = d => { PAGE += d; renderRuns(); $('.tscroll').scrollTop = 0; };
 
 /* ── Drawer ─────────────────────────────────────────────────────────────── */
 function openDrawer(r) {
+  CURRENT_RUN = r;
   $('#dr-name').textContent = r.flow_name;
   const s = $('#dr-status');
   s.className = 'st ' + stCls(r.status);
@@ -1182,13 +1226,17 @@ async function loadDbs() {
     .sort((a, b) => (b.ver || '').localeCompare(a.ver || '') || a.name.localeCompare(b.name));
 
   $('#dbs').innerHTML = rows.map(r => `
-    <tr class="${r.name === active ? 'sel' : ''}">
+    <tr class="${r.name === active ? 'sel' : 'clickable'}" data-db="${esc(r.name)}">
       <td>${r.ver ? `<span class="vbadge v${r.ver}">v${r.ver}</span>` : '<span class="muted">—</span>'}</td>
       <td class="mono">${esc(r.name)}${r.name === active ? ' <span class="tag" style="background:rgba(1,181,116,.18);color:var(--vu-success-focus)">in conf</span>' : ''}</td>
       <td>${r.prof ? `<span class="vbadge" style="background:rgba(255,255,255,.08);color:var(--vu-grey-400)">${esc(r.prof)}</span>`
                    : '<span class="muted" style="font-size:11.5px">no profile</span>'}</td>
       <td class="num"><span class="muted" style="font-size:11.5px">${r.name === active ? '' : 'Switch →'}</span></td>
     </tr>`).join('');
+
+  $('#dbs').querySelectorAll('tr.clickable').forEach(tr => {
+    tr.onclick = () => switchDb(tr.dataset.db);
+  });
 }
 
 /* ── Odoo state ─────────────────────────────────────────────────────────── */
@@ -1333,6 +1381,8 @@ async function loadBoard() {
 }
 
 async function showBoard(b) {
+  CURRENT_BOARD = b;
+  $('#board-edit').style.display = $('#board-del').style.display = '';
   $('#board-title').textContent = b.title;
   $('#board-meta').textContent = [b.task_number, b.session_title].filter(Boolean).join(' · ');
   const body = $('#board-body');
@@ -1372,6 +1422,11 @@ async function loadSessions() {
     </tr>`;
   }).join('');
 
+  $('#sessions').querySelectorAll('tr').forEach((tr, i) => {
+    tr.classList.add('clickable');
+    tr.onclick = e => { if (!e.target.classList.contains('morebtn')) editSession(rows[i]); };
+  });
+
   // Collapsed by default; expanding is per-row and reversible.
   $('#sessions').querySelectorAll('.taskcell').forEach(cell => {
     cell.onclick = e => {
@@ -1390,6 +1445,206 @@ function taskChips(tasks, expanded) {
   if (tasks.length <= 1) return chips;
   return chips + `<button class="morebtn" data-open="${expanded ? 1 : 0}">${
     expanded ? 'show less' : '+' + (tasks.length - 1) + ' more'}</button>`;
+}
+
+
+/* ── Write plumbing ─────────────────────────────────────────────────────── */
+function toast(msg, bad) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.className = 'toast'; }, 3200);
+}
+
+/* Every write goes through here so a failure is reported the same way
+   everywhere instead of each caller inventing its own silence. */
+async function send(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { detail: text }; }
+  if (!res.ok) throw new Error((data && (data.detail || data.message)) || `HTTP ${res.status}`);
+  return data;
+}
+
+const modal = $('#modal');
+const closeModal = () => { modal.classList.remove('open'); $('#m-save').onclick = null; };
+$('#m-cancel').onclick = closeModal;
+modal.onclick = e => { if (e.target === modal) closeModal(); };
+
+function openModal(title, html, onSave) {
+  $('#m-title').textContent = title;
+  $('#m-fields').innerHTML = html;
+  modal.classList.add('open');
+  const first = $('#m-fields').querySelector('input, textarea, select');
+  if (first) first.focus();
+  $('#m-save').onclick = async () => {
+    try { await onSave(); closeModal(); }
+    catch (e) { toast(String(e.message || e), true); }
+  };
+}
+
+/* ── Odoo start / stop ──────────────────────────────────────────────────── */
+$('#odoo-btn').onclick = async () => {
+  const btn = $('#odoo-btn');
+  const starting = btn.textContent.startsWith('Start');
+  btn.disabled = true; btn.textContent = starting ? 'Starting…' : 'Stopping…';
+  try {
+    const r = await send('POST', starting ? '/api/odoo/start' : '/api/odoo/stop', {});
+    toast(`Odoo ${r.status || (starting ? 'started' : 'stopped')}`);
+  } catch (e) { toast(String(e.message || e), true); }
+  btn.disabled = false;
+  setTimeout(loadOdoo, 1200);
+};
+
+/* ── Flow run actions ───────────────────────────────────────────────────── */
+let CURRENT_RUN = null;
+
+$('#dr-trace').onclick = async () => {
+  if (!CURRENT_RUN) return;
+  try {
+    const r = await send('POST', `/api/flow-runs/${CURRENT_RUN.run_id}/open-trace`);
+    toast(r && r.url ? 'Trace viewer opening…' : 'Trace opened');
+  } catch (e) { toast(String(e.message || e), true); }
+};
+
+$('#dr-tag').onclick = async () => {
+  if (!CURRENT_RUN) return;
+  const next = !CURRENT_RUN.safe_to_delete;
+  try {
+    await send('POST', `/api/flow-runs/${CURRENT_RUN.run_id}/note`, { safe_to_delete: next });
+    CURRENT_RUN.safe_to_delete = next ? 1 : 0;
+    const inList = RUNS.find(r => r.run_id === CURRENT_RUN.run_id);
+    if (inList) inList.safe_to_delete = CURRENT_RUN.safe_to_delete;
+    $('#dr-tag').textContent = next ? 'Remove safe-to-delete tag' : 'Tag safe to delete';
+    renderRuns();
+    refreshPurge();
+    toast(next ? 'Tagged safe to delete' : 'Tag removed');
+  } catch (e) { toast(String(e.message || e), true); }
+};
+
+/* The purge button only exists while something is actually reclaimable —
+   109 runs are tagged but only the ones that still have a trace on disk can
+   be purged, and offering it at zero would be a button that does nothing. */
+async function refreshPurge() {
+  try {
+    const t = await api('/api/flow-runs/tagged');
+    const n = t.pending_count ?? 0;
+    const mb = t.reclaimable_bytes ? (t.reclaimable_bytes / 1048576).toFixed(1) : '0';
+    const b = $('#purge');
+    b.style.display = n > 0 ? '' : 'none';
+    b.textContent = `Delete ${n} tagged trace${n === 1 ? '' : 's'} · ${mb} MB`;
+  } catch {}
+}
+
+$('#purge').onclick = async () => {
+  if (!confirm('Delete the trace files for every run tagged safe to delete?\n\nThe run history rows stay; only the .zip traces are removed. This cannot be undone.')) return;
+  try {
+    const r = await send('POST', '/api/flow-runs/purge-tagged');
+    toast(`Purged ${r.purged ?? ''} trace${r.purged === 1 ? '' : 's'}`.trim());
+    await loadRuns();
+    refreshPurge();
+  } catch (e) { toast(String(e.message || e), true); }
+};
+
+/* ── Database switch ────────────────────────────────────────────────────── */
+async function switchDb(name) {
+  if (!confirm(`Switch Odoo's active database to ${name}?\n\nThis rewrites the odoo.conf for that version and restarts Odoo if it is running.`)) return;
+  try {
+    toast(`Switching to ${name}…`);
+    const r = await send('POST', '/api/databases/switch', { db_name: name });
+    toast(r.status === 'ok' || !r.detail ? `Active database is now ${name}` : String(r.detail));
+    $('#dbs').dataset.done = '';
+    loadDbs();
+    loadOdoo();
+  } catch (e) { toast(String(e.message || e), true); }
+}
+
+/* ── Board create / edit / delete ───────────────────────────────────────── */
+let CURRENT_BOARD = null;
+
+function boardForm(b) {
+  return `
+    <div class="modal-row">
+      <div><label for="bf-title">Title</label><input id="bf-title" value="${esc(b ? b.title : '')}"></div>
+      <div style="flex:0 0 150px"><label for="bf-type">Type</label>
+        <select id="bf-type">
+          <option value="markdown"${b && b.content_type === 'markdown' ? ' selected' : ''}>markdown</option>
+          <option value="mermaid"${b && b.content_type === 'mermaid' ? ' selected' : ''}>mermaid</option>
+        </select></div>
+      <div style="flex:0 0 150px"><label for="bf-task">Task</label>
+        <input id="bf-task" placeholder="T26-00000" value="${esc(b && b.task_number ? b.task_number : '')}"></div>
+    </div>
+    <div><label for="bf-content">Content</label><textarea id="bf-content">${esc(b ? b.content : '')}</textarea></div>`;
+}
+
+const boardPayload = () => ({
+  title: $('#bf-title').value.trim(),
+  content: $('#bf-content').value,
+  content_type: $('#bf-type').value,
+  task_number: $('#bf-task').value.trim() || null,
+});
+
+$('#board-new').onclick = () => openModal('New explanation', boardForm(null), async () => {
+  const p = boardPayload();
+  if (!p.title) throw new Error('Title is required');
+  await send('POST', '/api/board', p);
+  toast('Saved to Board');
+  $('#board-list').dataset.done = ''; await loadBoard();
+});
+
+$('#board-edit').onclick = () => {
+  if (!CURRENT_BOARD) return;
+  openModal('Edit explanation', boardForm(CURRENT_BOARD), async () => {
+    const p = boardPayload();
+    if (!p.title) throw new Error('Title is required');
+    await send('PUT', `/api/board/${CURRENT_BOARD.id}`, p);
+    toast('Updated');
+    const id = CURRENT_BOARD.id;
+    $('#board-list').dataset.done = ''; await loadBoard();
+    const again = BOARD.find(x => x.id === id);
+    if (again) showBoard(again);
+  });
+};
+
+$('#board-del').onclick = async () => {
+  if (!CURRENT_BOARD) return;
+  if (!confirm(`Delete "${CURRENT_BOARD.title}"?\n\nThis cannot be undone.`)) return;
+  try {
+    await send('DELETE', `/api/board/${CURRENT_BOARD.id}`);
+    toast('Deleted');
+    CURRENT_BOARD = null;
+    $('#board-edit').style.display = $('#board-del').style.display = 'none';
+    $('#board-title').textContent = 'Select an explanation';
+    $('#board-meta').textContent = '';
+    $('#board-body').innerHTML = '<div class="empty">Pick one on the left.</div>';
+    $('#board-list').dataset.done = ''; await loadBoard();
+  } catch (e) { toast(String(e.message || e), true); }
+};
+
+/* ── Session task / notes ───────────────────────────────────────────────── */
+function editSession(sess) {
+  const last = (sess.tasks || [])[0] || {};
+  openModal('Session', `
+    <div class="modal-row">
+      <div style="flex:0 0 190px"><label for="sf-task">Task number</label>
+        <input id="sf-task" placeholder="T26-00000" value="${esc(sess.task_number || last.task_number || '')}"></div>
+      <div><label>Title</label><input value="${esc(sess.ai_title || '')}" disabled></div>
+    </div>
+    <div><label for="sf-notes">Notes</label><textarea id="sf-notes" style="min-height:120px">${esc(sess.notes || last.notes || '')}</textarea></div>`,
+  async () => {
+    const task = $('#sf-task').value.trim();
+    if (task && !/^T\d{2}-\d{5}$/.test(task)) throw new Error('Task must look like T26-04156');
+    await send('PUT', `/api/sessions/${sess.session_id}/task`,
+               { task_number: task, notes: $('#sf-notes').value });
+    toast('Session updated');
+    $('#sessions').dataset.done = ''; loadSessions();
+  });
 }
 
 /* ── Nav ────────────────────────────────────────────────────────────────── */

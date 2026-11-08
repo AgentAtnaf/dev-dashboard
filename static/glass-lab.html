@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glass Lab</title>
+<style>
+:root {
+  color-scheme: dark;
+
+  /* ── The glass material, as tokens ──────────────────────────────────────
+     Everything below is driven by these. The sliders write to them live. */
+  --glass-blur: 24px;
+  --glass-sat: 180%;
+  --glass-tint: #8ab4ff;      /* hue the glass lends to what's behind it */
+  --glass-tint-amt: 10%;      /* how much of it */
+  --glass-bright: 1.08;
+  --glass-radius: 22px;
+
+  --text: #f3f4f6;
+  --text-muted: #9ca3af;
+  --ok: #22c55e;
+  --bad: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Glass needs something behind it. A flat fill refracts to nothing, which
+     is the single biggest trap in applying this to a dark dashboard. */
+  background:
+    radial-gradient(60rem 40rem at 12% 8%,  #3b1d6e 0%, transparent 60%),
+    radial-gradient(50rem 40rem at 88% 18%, #0d4f6b 0%, transparent 55%),
+    radial-gradient(45rem 45rem at 70% 92%, #6b1d45 0%, transparent 60%),
+    radial-gradient(40rem 30rem at 25% 85%, #14532d 0%, transparent 55%),
+    #0b1020;
+  background-attachment: fixed;
+}
+
+/* A fine grid gives refraction something to bend. Straight lines are how the
+   eye reads a lens — on noise you cannot see it working at all. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(from white r g b / .10) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(from white r g b / .10) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* ── The material ────────────────────────────────────────────────────────── */
+.glass {
+  position: relative;
+  border-radius: var(--glass-radius);
+  corner-shape: squircle;
+  background: color-mix(in oklab, var(--glass-tint) var(--glass-tint-amt), transparent);
+  backdrop-filter:
+    blur(var(--glass-blur))
+    saturate(var(--glass-sat))
+    brightness(var(--glass-bright));
+  border: 1px solid rgb(from white r g b / .14);
+  /* Two inner strokes do the work: a bright top edge reading as a specular
+     highlight, a dim bottom edge reading as thickness. Plus a float shadow. */
+  box-shadow:
+    inset 0 1px 0 rgb(from white r g b / .28),
+    inset 0 -1px 0 rgb(from white r g b / .06),
+    inset 0 0 20px rgb(from white r g b / .04),
+    0 10px 36px rgb(from black r g b / .45);
+}
+
+/* Refraction must sit in the SAME filter chain as the blur, and before it.
+   Run it as a separate layer on top and the blur has already flattened the
+   backdrop to a smooth wash — there is no detail left to bend, and the only
+   thing that survives is a faint smear at the rim. Lens first, then blur. */
+.glass.refract {
+  backdrop-filter:
+    url(#lens)
+    blur(var(--glass-blur))
+    saturate(var(--glass-sat))
+    brightness(var(--glass-bright));
+}
+
+/* A grazing sheen across the top third, like light caught on a curved face. */
+.glass.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgb(from white r g b / .16) 0%,
+    rgb(from white r g b / .04) 28%,
+    transparent 55%);
+}
+
+.solid {
+  border-radius: var(--glass-radius);
+  corner-shape: squircle;
+  background: #1f2937;
+  border: 1px solid #374151;
+  box-shadow: 0 10px 36px rgb(from black r g b / .45);
+}
+
+/* ── Page furniture ──────────────────────────────────────────────────────── */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 80px; }
+
+header.bar {
+  position: sticky;
+  top: 14px;
+  z-index: 20;
+  margin: 14px auto 28px;
+  max-width: 1180px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+header.bar b { font-size: 15px; margin-right: 10px; white-space: nowrap; }
+.tab {
+  padding: 6px 14px;
+  border-radius: 999px;
+  corner-shape: squircle;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.tab.on {
+  color: #fff;
+  background: rgb(from white r g b / .16);
+  border-color: rgb(from white r g b / .2);
+  box-shadow: inset 0 1px 0 rgb(from white r g b / .3);
+}
+
+h2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); margin: 40px 0 6px; font-weight: 600; }
+.note { color: var(--text-muted); margin: 0 0 16px; max-width: 72ch; }
+.verdict { font-weight: 600; }
+.verdict.good { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 860px) { .row { grid-template-columns: 1fr; } }
+
+.pane { padding: 16px; }
+.pane h3 { margin: 0 0 12px; font-size: 13px; color: var(--text-muted); font-weight: 600; letter-spacing: .06em; }
+
+/* Dense data, deliberately at the dashboard's real sizes. */
+.run { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 11px; corner-shape: squircle; margin-bottom: 7px; }
+.run.g { background: rgb(from white r g b / .07); border: 1px solid rgb(from white r g b / .1); }
+.run.s { background: #111827; border: 1px solid #374151; }
+.run .pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.pass { background: #14532d; color: #86efac; }
+.fail { background: #7f1d1d; color: #fca5a5; }
+.run .nm { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+.run .meta { margin-left: auto; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+.controls {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 50;
+  padding: 14px 16px;
+  width: 268px;
+}
+.controls label { display: block; font-size: 11.5px; color: var(--text-muted); margin: 11px 0 3px; letter-spacing: .04em; }
+.controls label:first-of-type { margin-top: 0; }
+.controls input[type=range] { width: 100%; accent-color: #8ab4ff; }
+.controls output { float: right; font-family: ui-monospace, monospace; color: var(--text); }
+.controls .seg { display: flex; gap: 6px; margin-top: 4px; }
+.controls .seg button {
+  flex: 1; padding: 5px 0; font-size: 11.5px; cursor: pointer; color: var(--text-muted);
+  background: rgb(from white r g b / .06); border: 1px solid rgb(from white r g b / .12);
+  border-radius: 9px; corner-shape: squircle;
+}
+.controls .seg button.on { background: rgb(from white r g b / .2); color: #fff; }
+.fps { margin-top: 12px; font-size: 11.5px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+
+<!-- ── Displacement map ───────────────────────────────────────────────────────
+     feDisplacementMap moves each pixel by scale * (channel/255 - 0.5). So a
+     map that is neutral grey (128) in the middle and ramps to 0 / 255 at the
+     edges pulls the backdrop inward at the rim and leaves the centre alone —
+     which is what a convex lens does.
+
+     One image cannot carry both axes as a plain gradient, so there are two:
+     a horizontal ramp in red, a vertical ramp in green. feComposite sums them
+     arithmetically (k2=1, k3=1, k4=-0.5) so each channel keeps its own axis. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="lens" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+    <feImage result="mx" preserveAspectRatio="none" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><defs><linearGradient id='h' x1='0' x2='1'><stop offset='0' stop-color='rgb(0,128,128)'/><stop offset='0.17' stop-color='rgb(128,128,128)'/><stop offset='0.83' stop-color='rgb(128,128,128)'/><stop offset='1' stop-color='rgb(255,128,128)'/></linearGradient></defs><rect width='400' height='300' fill='url(%23h)'/></svg>"/>
+    <feImage result="my" preserveAspectRatio="none" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><defs><linearGradient id='v' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='rgb(128,0,128)'/><stop offset='0.17' stop-color='rgb(128,128,128)'/><stop offset='0.83' stop-color='rgb(128,128,128)'/><stop offset='1' stop-color='rgb(128,255,128)'/></linearGradient></defs><rect width='400' height='300' fill='url(%23v)'/></svg>"/>
+    <feComposite in="mx" in2="my" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.5" result="map"/>
+    <feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" scale="0" result="disp">
+    </feDisplacementMap>
+    <feGaussianBlur in="disp" stdDeviation="0.4"/>
+  </filter>
+</svg>
+
+<header class="bar glass sheen">
+  <b>◉ Dev Dashboard</b>
+  <div class="tab on">Flows</div>
+  <div class="tab">Databases</div>
+  <div class="tab">Make</div>
+  <div class="tab">Board</div>
+  <div class="tab">Sessions</div>
+</header>
+
+<div class="wrap">
+
+  <h2>A · Chrome</h2>
+  <p class="note">
+    The bar above is the material doing what it is actually for: a floating
+    layer you look <em>past</em>. Scroll — content passing beneath is the whole
+    effect. <span class="verdict good">This is where it earns its keep.</span>
+  </p>
+
+  <h2>B · The same list, glass vs opaque</h2>
+  <p class="note">
+    Real sizes from the Flows tab — 12.5px monospace, 11.5px metadata. Read both
+    columns and decide which one you would stare at for an hour.
+    <span class="verdict bad">Content surfaces are where it costs you.</span>
+  </p>
+  <div class="row">
+    <div class="pane glass sheen refract">
+      <h3>GLASS</h3>
+      <div class="run g"><span class="pill fail">Failed</span><span class="nm">navmenu-miss-check</span><span class="meta">7.0 s · dev_rti_uat</span></div>
+      <div class="run g"><span class="pill pass">Passed</span><span class="nm">navmenu-sidebar-check</span><span class="meta">15.8 s · dev_rti_uat</span></div>
+      <div class="run g"><span class="pill pass">Passed</span><span class="nm">KC-REST-PROBE</span><span class="meta">8.7 s · dv_kc</span></div>
+      <div class="run g"><span class="pill pass">Passed</span><span class="nm">rma-document-reason-sme</span><span class="meta">92.4 s · dv_sme</span></div>
+      <div class="run g"><span class="pill fail">Failed</span><span class="nm">rma-document-reason-sme</span><span class="meta">92.0 s · dv_sme</span></div>
+      <div class="run g"><span class="pill pass">Passed</span><span class="nm">KC-08190-01-CANCEL-RETURNS</span><span class="meta">17.0 s · dv_kc</span></div>
+    </div>
+    <div class="pane solid">
+      <h3>OPAQUE</h3>
+      <div class="run s"><span class="pill fail">Failed</span><span class="nm">navmenu-miss-check</span><span class="meta">7.0 s · dev_rti_uat</span></div>
+      <div class="run s"><span class="pill pass">Passed</span><span class="nm">navmenu-sidebar-check</span><span class="meta">15.8 s · dev_rti_uat</span></div>
+      <div class="run s"><span class="pill pass">Passed</span><span class="nm">KC-REST-PROBE</span><span class="meta">8.7 s · dv_kc</span></div>
+      <div class="run s"><span class="pill pass">Passed</span><span class="nm">rma-document-reason-sme</span><span class="meta">92.4 s · dv_sme</span></div>
+      <div class="run s"><span class="pill fail">Failed</span><span class="nm">rma-document-reason-sme</span><span class="meta">92.0 s · dv_sme</span></div>
+      <div class="run s"><span class="pill pass">Passed</span><span class="nm">KC-08190-01-CANCEL-RETURNS</span><span class="meta">17.0 s · dv_kc</span></div>
+    </div>
+  </div>
+
+  <h2>C · Refraction, on a panel big enough to show it</h2>
+  <p class="note">
+    Push <b>Refraction</b> on the panel. Watch the grid lines bend at the rim —
+    that bending is the difference between glass and a grey box. Then note how
+    little of it survives on the small elements above.
+  </p>
+  <!-- Hard-edged stripes sit behind the panel on purpose. Refraction is only
+       visible on something with edges; over a soft gradient it does nothing
+       the eye can read. -->
+  <div style="position:relative; padding:26px 0;">
+    <div style="position:absolute; inset:0; border-radius:26px; overflow:hidden;
+                background:repeating-linear-gradient(68deg,
+                  rgb(from white r g b / .13) 0 3px,
+                  transparent 3px 26px);"></div>
+    <div class="pane glass sheen refract" style="position:relative; min-height:230px; display:flex; align-items:center; justify-content:center; text-align:center;">
+      <div>
+        <div style="font-size:30px; font-weight:700; letter-spacing:-.02em;">1,304 runs</div>
+        <div style="color:var(--text-muted); margin-top:6px;">1 tagged · 2.9 MB reclaimable</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>D · Cost</h2>
+  <p class="note">
+    Each <code>backdrop-filter</code> element is a separate composited layer the
+    GPU re-renders on scroll. The Databases tab holds <b>30+ cards</b>. Use the
+    stress slider to put that many on screen and watch the frame counter.
+  </p>
+  <div id="stress" class="row" style="grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:12px;"></div>
+
+</div>
+
+<div class="controls glass sheen">
+  <label>Blur <output id="oBlur">24px</output></label>
+  <input type="range" id="rBlur" min="0" max="60" value="24">
+
+  <label>Saturation <output id="oSat">180%</output></label>
+  <input type="range" id="rSat" min="100" max="300" value="180">
+
+  <label>Tint <output id="oTint">10%</output></label>
+  <input type="range" id="rTint" min="0" max="40" value="10">
+
+  <label>Refraction <output id="oRef">26</output></label>
+  <input type="range" id="rRef" min="0" max="120" value="26">
+
+  <label>Corner radius <output id="oRad">22px</output></label>
+  <input type="range" id="rRad" min="0" max="44" value="22">
+
+  <label>Corner shape</label>
+  <div class="seg">
+    <button data-shape="squircle" class="on">squircle</button>
+    <button data-shape="round">round</button>
+  </div>
+
+  <label>Stress: glass cards <output id="oN">0</output></label>
+  <input type="range" id="rN" min="0" max="48" value="0">
+
+  <div class="fps" id="fps">fps —</div>
+</div>
+
+<script>
+const root = document.documentElement;
+const $ = id => document.getElementById(id);
+
+const bind = (slider, out, fmt, apply) => {
+  const el = $(slider), o = $(out);
+  const run = () => { const v = +el.value; o.textContent = fmt(v); apply(v); };
+  el.addEventListener('input', run); run();
+};
+
+bind('rBlur', 'oBlur', v => v + 'px', v => root.style.setProperty('--glass-blur', v + 'px'));
+bind('rSat',  'oSat',  v => v + '%',  v => root.style.setProperty('--glass-sat', v + '%'));
+bind('rTint', 'oTint', v => v + '%',  v => root.style.setProperty('--glass-tint-amt', v + '%'));
+bind('rRad',  'oRad',  v => v + 'px', v => root.style.setProperty('--glass-radius', v + 'px'));
+
+// The displacement scale lives on the SVG node, not in CSS.
+const disp = document.querySelector('#lens feDisplacementMap');
+bind('rRef', 'oRef', v => v || 'off', v => disp.setAttribute('scale', v));
+
+document.querySelectorAll('.controls .seg button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.controls .seg button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    document.querySelectorAll('.glass, .solid, .tab, .run').forEach(
+      el => el.style.cornerShape = b.dataset.shape);
+  };
+});
+
+// Stress test — how many live glass layers before scrolling stutters.
+const stress = $('stress');
+bind('rN', 'oN', v => v, n => {
+  stress.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('div');
+    d.className = 'pane glass sheen';
+    d.style.padding = '12px';
+    d.innerHTML = `<div style="font-weight:600;font-family:ui-monospace,monospace;font-size:13px">dv_card_${i}</div>
+                   <div style="color:var(--text-muted);font-size:11.5px;margin-top:4px">v17 · switch →</div>`;
+    stress.appendChild(d);
+  }
+});
+
+// Frame counter, so "feels fine" is a number instead of a vibe.
+let frames = 0, last = performance.now();
+(function tick(now) {
+  frames++;
+  if (now - last >= 1000) {
+    const fps = Math.round(frames * 1000 / (now - last));
+    $('fps').textContent = `fps ${fps}` + (fps < 50 ? '  ← dropping' : '');
+    $('fps').style.color = fps < 50 ? 'var(--bad)' : 'var(--text-muted)';
+    frames = 0; last = now;
+  }
+  requestAnimationFrame(tick);
+})(performance.now());
+</script>
+</body>
+</html>

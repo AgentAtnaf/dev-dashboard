@@ -195,7 +195,7 @@
 
      Swap it for any image:  --bg-photo: url('/static/bg/your-file.jpg');
      Set it to `none` and the mesh alone still works. */
-  --bg-photo: url('/static/bg/backdrop.jpg');
+  --bg-photo: url('/static/bg/bg7.jpg');
 
   /* The rulings are gone. They existed to give the lens something to bend
      when there was no photo; a 4000x3000 accretion disc does that far
@@ -527,6 +527,12 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; 
 }
 .search input { background: none; border: 0; outline: 0; color: #fff; font-family: inherit; font-size: 13px; width: 100%; }
 .search input::placeholder { color: var(--vu-grey-500); }
+#bgpick {
+  background: var(--vu-secondary); color: var(--vu-text-focus);
+  border: 1px solid var(--vu-border-navbar); border-radius: var(--r-btn);
+  padding: 6px 9px; font: inherit; font-size: 12px; cursor: pointer; outline: 0;
+}
+#bgpick option { background: #10132b; color: #fff; }
 .search svg { width: 14px; height: 14px; stroke: var(--vu-grey-500); fill: none; stroke-width: 2; }
 
 /* ── Stat row ──────────────────────────────────────────────────────────── */
@@ -700,6 +706,17 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
     <div class="topbar">
       <div class="crumb">Dashboard<b id="crumb">Flows</b></div>
       <div class="grow"></div>
+      <select id="bgpick" title="Backdrop">
+        <option value="bg7">7 · Tall trees ▲</option>
+        <option value="bg1">1 · Misty ridge</option>
+        <option value="bg2">2 · Fog &amp; conifers</option>
+        <option value="bg3">3 · Snow canopy</option>
+        <option value="bg4">4 · Snow forest</option>
+        <option value="bg5">5 · Clouds</option>
+        <option value="bg6">6 · Dead trees</option>
+        <option value="backdrop">Accretion disc</option>
+        <option value="">Mesh only</option>
+      </select>
       <div class="chips" id="themes">
         <div class="chip on" data-t="glass">Glass</div>
         <div class="chip" data-t="vision">Vision</div>
@@ -987,6 +1004,20 @@ document.querySelectorAll('#themes .chip').forEach(c => {
 try {
   const saved = localStorage.getItem('vision-lab-theme');
   if (saved) document.querySelector(`#themes .chip[data-t="${saved}"]`)?.click();
+} catch {}
+
+// Backdrop picker. Writing --bg-photo inline on :root overrides the theme's
+// own value, so switching needs no stylesheet surgery.
+const bg = $('#bgpick');
+const applyBg = v => document.documentElement.style.setProperty(
+  '--bg-photo', v ? `url('/static/bg/${v}.jpg')` : 'none');
+bg.onchange = () => {
+  applyBg(bg.value);
+  try { localStorage.setItem('vision-lab-bg', bg.value); } catch {}
+};
+try {
+  const saved = localStorage.getItem('vision-lab-bg');
+  if (saved !== null) { bg.value = saved; applyBg(saved); }
 } catch {}
 
 $('#q').addEventListener('input', e => { Q = e.target.value.trim().toLowerCase(); renderRuns(); });

@@ -204,8 +204,7 @@
   backdrop-filter: none;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.3),
-    inset 0 -1px 0 rgba(255,255,255,.07),
-    0 14px 44px rgba(0,0,0,.42);
+    inset 0 -1px 0 rgba(255,255,255,.07);
 }
 
 /* Refraction on every surface big enough to show it. Still not the table
@@ -244,7 +243,26 @@
    so the whole surface refracts and the backdrop stays sharp throughout. */
 
 /* Fresnel: a real edge goes bright because light grazing it reflects rather
-   than passes through. Two stacked inset rings approximate the falloff. */
+   than passes through. Two stacked inset rings approximate the falloff.
+
+   No OUTER shadow here, and that is a performance fix. Measured on an M4 Mac
+   at 120Hz, scrolling the session list:
+
+     hairlines + fresnel insets, no outer shadow   120 fps
+     + outer shadow, blur  6px                      46 fps
+     + outer shadow, blur 12px                      47 fps
+     + outer shadow, blur 24px                      48 fps
+     + outer shadow, blur 48px                      47 fps
+
+   The radius is irrelevant — a 6px blur costs exactly as much as 48px, so
+   this is not blur work. An outer shadow on a translucent element sitting
+   over the photo drops Chrome off its fast scrolling path entirely, and the
+   whole region is re-blended every frame instead of scrolled.
+
+   Everything that makes the edge read as glass is an INSET, and insets are
+   free: the two 28px Fresnel rings measured at 120 fps on their own. What
+   is lost is only the cards' drop-float against the backdrop, which the
+   bright top edge and the dispersion hairlines carry well enough. */
 :root[data-theme="glass"] .vcard,
 :root[data-theme="glass"] .vbox,
 :root[data-theme="glass"] .topbar {
@@ -255,8 +273,7 @@
     inset -1px 0 0 rgba(255,150,215,.17),
     inset 0 -1px 0 rgba(255,255,255,.1),
     inset 0 -18px 28px -22px rgba(255,255,255,.22),
-    inset 0 18px 28px -22px rgba(255,255,255,.3),
-    0 16px 48px rgba(0,0,0,.44);
+    inset 0 18px 28px -22px rgba(255,255,255,.3);
 }
 
 /* The exception that keeps the table readable. */

@@ -637,6 +637,85 @@ table.dense tbody tr.sel td { background: var(--sel-bg); }
 .iconbtn.danger:hover { background: rgba(255,69,58,.28); border-color: rgba(255,69,58,.5); }
 table.dense tbody tr.clickable:hover td { background: rgba(255,255,255,.08); }
 
+/* ── Motion ──────────────────────────────────────────────────────────────────
+   Two rules, both paid for in measurement on the real display:
+
+   1. Only transform and opacity are animated. They run on the compositor;
+      anything else repaints, and this page already lost more than half its
+      frame rate twice to things that repaint (backdrop-filter on scrollers,
+      outer box-shadows on cards).
+   2. Nothing loops. A continuous animation inside the sidebar would keep its
+      backdrop-filter lens re-evaluating forever, so every animation here is a
+      one-shot that ends and leaves no transform behind.
+   ────────────────────────────────────────────────────────────────────────── */
+:root { --ease: cubic-bezier(.2, .7, .2, 1); }
+
+@keyframes rise   { from { opacity: 0; transform: translateY(10px); } }
+@keyframes rowIn  { from { opacity: 0; transform: translate(var(--dx, 0px), var(--dy, 5px)); } }
+@keyframes pop    { from { transform: scale(.8); } }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@keyframes flash  { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* A view arrives as stat cards in sequence, then the panel under them. */
+.view.on > .stats > .stat { animation: rise .32s var(--ease) backwards; }
+.view.on > .stats > .stat:nth-child(2) { animation-delay: 45ms; }
+.view.on > .stats > .stat:nth-child(3) { animation-delay: 90ms; }
+.view.on > .stats > .stat:nth-child(4) { animation-delay: 135ms; }
+.view.on > *:not(.stats) { animation: rise .34s var(--ease) backwards; }
+.view.on > .stats ~ * { animation-delay: 120ms; }
+.view.on > *:not(.stats) ~ *:not(.stats) { animation-delay: 70ms; }
+
+/* Rows cascade in. --i is the row index; the delay is capped so a 74-item
+   list does not take a second to finish arriving. Paging sets --dx so rows
+   come from the side you are moving toward. Typing in the search box does
+   NOT replay this — the list would strobe on every keystroke. */
+.rows-in > tr, .rows-in > .bitem, .rows-in .trow, .rows-in .tgroup {
+  animation: rowIn .26s var(--ease) backwards;
+  animation-delay: calc(min(var(--i, 0), 22) * 13ms);
+}
+.flash { animation: flash .5s ease 2; }
+.replay-fade { animation: rise .24s var(--ease); }
+
+/* Press feedback on everything that is actually a control. */
+.btn, .iconbtn, .runbtn, .pbtn, .chip, .navitem, .stat[role="button"], .vbadge[data-ver] {
+  transition: transform .12s var(--ease), background-color .15s, color .15s, border-color .15s;
+}
+.btn:active, .iconbtn:active, .runbtn:active, .pbtn:active:not(:disabled),
+.chip:active, .vbadge[data-ver]:active { transform: scale(.95); }
+.navitem:active { transform: scale(.98); }
+.navitem.on .tile { animation: pop .3s var(--ease); }
+.navitem:not(.on):hover .tile { transform: scale(1.06); }
+.navitem .tile { transition: transform .15s var(--ease), background .14s; }
+
+/* Stat cards are buttons now, so they have to behave like buttons. They used
+   to carry a bordered icon tile that looked pressable and did nothing. */
+.stat[role="button"] { cursor: pointer; user-select: none; outline: 0; }
+.stat[role="button"]:hover { transform: translateY(-2px); }
+.stat[role="button"]:active { transform: translateY(0) scale(.985); }
+.stat[role="button"] .icon { transition: transform .18s var(--ease), background-color .15s; }
+.stat[role="button"]:hover .icon { transform: translateX(2px) scale(1.06); }
+:root[data-theme="glass"] .stat[role="button"]:hover { background-color: rgba(26,26,32,.62); border-color: rgba(255,255,255,.34); }
+:root[data-theme="glass"] .stat[role="button"]:hover .icon { background: rgba(255,255,255,.24); }
+.stat[role="button"]:focus-visible, .navitem:focus-visible, .chip:focus-visible {
+  outline: 2px solid rgba(255,255,255,.7); outline-offset: 2px;
+}
+.vbadge[data-ver] { border: 0; cursor: pointer; margin-right: 5px; }
+.vbadge[data-ver]:hover { filter: brightness(1.3); }
+
+.modal.open { animation: fadeIn .16s ease; }
+.modal.open .modal-box { animation: modalIn .22s var(--ease); }
+table.dense tbody td { transition: background-color .12s; }
+.search { transition: width .22s var(--ease), border-color .15s; }
+.search:focus-within { width: 330px; border-color: rgba(255,255,255,.45); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-delay: 0s !important;
+    transition-duration: .01ms !important;
+  }
+}
+
 .split { display: flex; gap: 14px; flex: 1; min-height: 0; }
 .split > .panel { min-width: 0; }
 
@@ -824,14 +903,14 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
     <!-- ── Flows view ────────────────────────────────────────────────────── -->
     <div class="view on" id="v-flows">
       <div class="stats">
-        <div class="stat vcard"><div><div class="k">Total runs</div><div class="v" id="s-total">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h5v5"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">Pass rate</div><div class="v" id="s-rate">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">Reclaimable</div><div class="v" id="s-tag">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">Last run</div><div class="v" id="s-last">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="flows-all" title="Show all runs"><div><div class="k">Total runs</div><div class="v" id="s-total">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 6-7"/><path d="M14 8h5v5"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="flows-failed" title="Show the failed runs"><div><div class="k">Pass rate</div><div class="v" id="s-rate">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="flows-tagged" title="Show runs tagged safe to delete"><div><div class="k">Reclaimable</div><div class="v" id="s-tag">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="flows-latest" title="Open the latest run"><div><div class="k">Last run</div><div class="v" id="s-last">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div></div>
       </div>
 
       <div class="panel vcard">
@@ -867,14 +946,14 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
     <!-- ── Databases view ────────────────────────────────────────────────── -->
     <div class="view" id="v-databases">
       <div class="stats" style="grid-template-columns:repeat(4,1fr)">
-        <div class="stat vcard"><div><div class="k">Active database</div><div class="v mono" id="d-active" style="font-size:15px">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">Total</div><div class="v" id="d-total">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">By version</div><div class="v" id="d-ver" style="font-size:14px">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div></div>
-        <div class="stat vcard"><div><div class="k">Odoo</div><div class="v" id="d-state" style="font-size:15px">—</div></div>
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 6.5a8 8 0 1011 0"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="db-active" title="Jump to the active database"><div><div class="k">Active database</div><div class="v mono" id="d-active" style="font-size:15px">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="db-all" title="Clear the filter"><div><div class="k">Total</div><div class="v" id="d-total">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="db-all" title="Click a version to filter by it; click the card to clear"><div><div class="k">By version</div><div class="v" id="d-ver" style="font-size:14px">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div></div>
+        <div class="stat vcard" role="button" tabindex="0" data-act="db-log" title="Open the Odoo log"><div><div class="k">Odoo</div><div class="v" id="d-state" style="font-size:15px">—</div></div>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.5 6.5a8 8 0 1011 0"/></svg></div></div>
       </div>
 
       <div class="panel vcard">
@@ -988,6 +1067,23 @@ let RUNS = [], FILTER = 'all', Q = '', PAGE = 0;
    typing in it did nothing anywhere except Flows. */
 let VIEW = 'flows';
 let DBROWS = [], DBACTIVE = null, SESSIONS = [];
+/* Motion helpers. ANIM is false only while the search box re-renders, so a
+   list does not replay its entrance on every keystroke. */
+let ANIM = true, PAGE_DIR = 0;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const replay = (el, cls) => { if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+const rowsIn = el => { if (!el) return; el.classList.remove('rows-in'); if (ANIM) { void el.offsetWidth; el.classList.add('rows-in'); } };
+function countUp(el, to, fmt = n => n.toLocaleString()) {
+  const from = +el.dataset.n || 0;
+  el.dataset.n = to;
+  if (reduceMotion || from === to) { el.textContent = fmt(to); return; }
+  const t0 = performance.now(), dur = 520;
+  (function tick(t) {
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(Math.round(from + (to - from) * e));
+    if (k < 1) requestAnimationFrame(tick);
+  })(t0);
+}
 const hit = (...parts) => !Q || parts.filter(Boolean).join(' ').toLowerCase().includes(Q);
 const PAGE_SIZE = 20;
 
@@ -1011,14 +1107,15 @@ const stGly = s => s === 'passed' ? '\u2713' : s === 'failed' ? '\u2715' : '\u00
 async function loadRuns() {
   const d = await api('/api/flow-runs?limit=200');   // server caps limit at 200
   RUNS = d.runs || [];
-  $('#s-total').innerHTML = (d.total ?? RUNS.length).toLocaleString();
+  countUp($('#s-total'), d.total ?? RUNS.length);
   $('#n-flows').textContent = (d.total ?? RUNS.length).toLocaleString();
 
   const known = RUNS.filter(r => r.status === 'passed' || r.status === 'failed');
   const pass = known.filter(r => r.status === 'passed').length;
-  $('#s-rate').innerHTML = known.length
-    ? Math.round(100 * pass / known.length) + '%<small>last ' + known.length + '</small>'
-    : '—';
+  if (known.length) {
+    $('#s-rate').innerHTML = '<span>0</span>%<small>last ' + known.length + '</small>';
+    countUp($('#s-rate').firstElementChild, Math.round(100 * pass / known.length));
+  } else $('#s-rate').textContent = '—';
   $('#s-last').innerHTML = RUNS.length ? ago(RUNS[0].started_at) : '—';
 
   try {
@@ -1064,7 +1161,7 @@ function renderRuns() {
   $('#next').disabled = PAGE >= pages - 1;
 
   $('#runs').innerHTML = rows.length ? rows.map((r, i) => `
-    <tr data-i="${i}">
+    <tr data-i="${i}" style="--i:${i}">
       <td><span class="st ${stCls(r.status)}"><span class="d"></span><span class="g">${stGly(r.status)}</span>${esc(r.status || 'unknown')}</span></td>
       <td class="mono">${esc(r.flow_name)}${r.safe_to_delete ? ' <span class="tag">safe to delete</span>' : ''}</td>
       <td class="mono muted">${esc(r.db_name || '—')}</td>
@@ -1072,6 +1169,12 @@ function renderRuns() {
       <td class="num muted">${dur(r.duration_ms)}</td>
       <td class="muted">${ago(r.started_at)}</td>
     </tr>`).join('') : '<tr><td colspan="6"><div class="empty">Nothing matches that filter.</div></td></tr>';
+
+  // Paging slides rows in from the side you moved toward; anything else rises.
+  $('#runs').style.setProperty('--dx', PAGE_DIR ? (PAGE_DIR > 0 ? '16px' : '-16px') : '0px');
+  $('#runs').style.setProperty('--dy', PAGE_DIR ? '0px' : '5px');
+  PAGE_DIR = 0;
+  rowsIn($('#runs'));
 
   $('#runs').querySelectorAll('tr[data-i]').forEach(tr => {
     tr.onclick = () => {
@@ -1082,7 +1185,7 @@ function renderRuns() {
   });
 }
 
-const goPage = d => { PAGE += d; renderRuns(); $('.tscroll').scrollTop = 0; };
+const goPage = d => { PAGE += d; PAGE_DIR = d; renderRuns(); $('.tscroll').scrollTop = 0; };
 
 /* ── Drawer ─────────────────────────────────────────────────────────────── */
 function openDrawer(r) {
@@ -1126,7 +1229,7 @@ async function loadDbs() {
   const tally = {};
   vers.forEach(v => { if (v) tally[v] = (tally[v] || 0) + 1; });
   $('#d-ver').innerHTML = Object.keys(tally).sort().reverse()
-    .map(v => `<span class="vbadge v${v}" style="margin-right:5px">v${v}</span>`).join('') || '—';
+    .map(v => `<button class="vbadge v${v}" data-ver="${v}" title="Show only v${v} databases">v${v}</button>`).join('') || '—';
 
   // Group by version — the badges were the real organising axis all along.
   DBROWS = names.map((n, i) => ({ name: n, ver: vers[i], prof: profiles[n] || null }))
@@ -1140,8 +1243,8 @@ function renderDbs() {
   const rows = DBROWS.filter(r => hit(r.name, r.prof, r.ver && 'v' + r.ver));
   $('#d-total').textContent = rows.length === DBROWS.length
     ? DBROWS.length : `${rows.length} / ${DBROWS.length}`;
-  $('#dbs').innerHTML = rows.length ? rows.map(r => `
-    <tr class="${r.name === active ? 'sel' : 'clickable'}" data-db="${esc(r.name)}">
+  $('#dbs').innerHTML = rows.length ? rows.map((r, i) => `
+    <tr class="${r.name === active ? 'sel' : 'clickable'}" data-db="${esc(r.name)}" style="--i:${i}">
       <td>${r.ver ? `<span class="vbadge v${r.ver}">v${r.ver}</span>` : '<span class="muted">—</span>'}</td>
       <td class="mono">${esc(r.name)}${r.name === active ? ' <span class="tag" style="background:rgba(1,181,116,.18);color:var(--vu-success-focus)">in conf</span>' : ''}</td>
       <td>${r.prof ? `<span class="vbadge" style="background:rgba(255,255,255,.08);color:var(--vu-grey-400)">${esc(r.prof)}</span>`
@@ -1149,6 +1252,7 @@ function renderDbs() {
       <td class="num"><span class="muted" style="font-size:11.5px">${r.name === active ? '' : 'Switch →'}</span></td>
     </tr>`).join('') : '<tr><td colspan="4"><div class="empty">No database matches that filter.</div></td></tr>';
 
+  rowsIn($('#dbs'));
   $('#dbs').querySelectorAll('tr.clickable').forEach(tr => {
     tr.onclick = () => switchDb(tr.dataset.db);
   });
@@ -1195,12 +1299,13 @@ function renderMake() {
   $('#make-sub').textContent = shown === all
     ? `${all} targets in ${TARGETS.length} groups`
     : `${shown} of ${all} targets`;
+  let rowNo = 0;
   $('#make-list').innerHTML = groups.map(g => `
     <div class="tgroup">${esc(g.group)}</div>
     ${g.targets.map(t => {
       const shared = (t.params || []).filter(p => ['MOD', 'DB', 'PRJ'].includes(p.name));
       const own    = (t.params || []).filter(p => !['MOD', 'DB', 'PRJ'].includes(p.name));
-      return `<div class="trow" data-t="${esc(t.name)}">
+      return `<div class="trow" data-t="${esc(t.name)}" style="--i:${rowNo++}">
         <span class="tn">${esc(t.name)}</span>
         <span class="tdesc">${esc(t.description || '')}</span>
         <span class="uses">${shared.map(p => `<span class="useschip" data-need="${p.required ? 1 : 0}" data-k="${p.name}">${p.name}</span>`).join('')}</span>
@@ -1209,6 +1314,7 @@ function renderMake() {
       </div>`;
     }).join('')}`).join('');
 
+  rowsIn($('#make-list'));
   $('#make-list').querySelectorAll('.trow').forEach(row => {
     row.querySelector('.runbtn').onclick = () => runTarget(row);
   });
@@ -1294,7 +1400,7 @@ function renderBoardList() {
   $('#board-sub').textContent = list.length === BOARD.length
     ? BOARD.length + ' saved' : `${list.length} of ${BOARD.length}`;
   $('#board-list').innerHTML = list.length ? list.map((b, i) => `
-    <div class="bitem" data-i="${i}">
+    <div class="bitem" data-i="${i}" style="--i:${i}">
       <div class="bt">${esc(b.title)}</div>
       <div class="bm">
         <span class="kind ${esc(b.content_type)}">${esc(b.content_type)}</span>
@@ -1302,6 +1408,7 @@ function renderBoardList() {
         <span>${b.created_at ? new Date(b.created_at).toLocaleDateString() : ''}</span>
       </div>
     </div>`).join('') : '<div class="empty">Nothing matches that filter.</div>';
+  rowsIn($('#board-list'));
   $('#board-list').querySelectorAll('.bitem').forEach(el => {
     el.onclick = () => {
       $('#board-list').querySelectorAll('.bitem').forEach(x => x.classList.remove('sel'));
@@ -1336,6 +1443,7 @@ async function showBoard(b) {
     body.innerHTML = DOMPurify.sanitize(marked.parse(b.content || ''));
   }
   body.parentElement.scrollTop = 0;
+  replay(body, 'replay-fade');
 }
 
 /* ── Sessions ───────────────────────────────────────────────────────────── */
@@ -1353,7 +1461,7 @@ function renderSessions() {
     ? SESSIONS.length + ' sessions' : `${rows.length} of ${SESSIONS.length}`;
   $('#sessions').innerHTML = rows.length ? rows.map((r, i) => {
     const tasks = r.tasks || [];
-    return `<tr data-i="${i}">
+    return `<tr data-i="${i}" style="--i:${i}">
       <td class="mono muted">${esc(r.date || '')}</td>
       <td>${esc(r.ai_title || '(untitled)')}</td>
       <td class="muted">${esc(r.project || '—')}</td>
@@ -1361,6 +1469,7 @@ function renderSessions() {
     </tr>`;
   }).join('') : '<tr><td colspan="4"><div class="empty">No session matches that filter.</div></td></tr>';
 
+  rowsIn($('#sessions'));
   $('#sessions').querySelectorAll('tr[data-i]').forEach(tr => {
     const i = +tr.dataset.i;
     tr.classList.add('clickable');
@@ -1643,6 +1752,7 @@ document.querySelectorAll('.navitem').forEach(it => {
     document.querySelectorAll('.view').forEach(x => x.classList.remove('on'));
     $('#v-' + v).classList.add('on');
     $('#crumb').textContent = it.dataset.name || it.textContent.trim().split(/\s/)[0];
+    replay($('#crumb'), 'replay-fade');
     VIEW = v;
     $('#q').placeholder = PLACEHOLDER[v] || 'Filter…';
     $('#q').setAttribute('aria-label', PLACEHOLDER[v] || 'Filter');
@@ -1656,13 +1766,7 @@ document.querySelectorAll('.navitem').forEach(it => {
 });
 
 document.querySelectorAll('#filters .chip').forEach(c => {
-  c.onclick = () => {
-    document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
-    c.classList.add('on');
-    FILTER = c.dataset.f;
-    PAGE = 0;
-    renderRuns();
-  };
+  c.onclick = () => setFilter(c.dataset.f);
 });
 
 
@@ -1719,7 +1823,45 @@ const PLACEHOLDER = {
 
 $('#q').addEventListener('input', e => {
   Q = e.target.value.trim().toLowerCase();
-  (RERENDER[VIEW] || RERENDER.flows)();
+  ANIM = false;                              // typing must not strobe the list
+  try { (RERENDER[VIEW] || RERENDER.flows)(); } finally { ANIM = true; }
+});
+const setQuery = v => { $('#q').value = v; Q = v.trim().toLowerCase(); (RERENDER[VIEW] || RERENDER.flows)(); };
+addEventListener('keydown', e => {
+  if (e.key !== '/' || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  e.preventDefault(); $('#q').focus(); $('#q').select();
+});
+
+/* ── Stat cards are controls ────────────────────────────────────────────────
+   Each one drills into the thing it summarises. They used to be inert, with
+   an icon tile styled exactly like a button. */
+const setFilter = f => {
+  document.querySelectorAll('#filters .chip').forEach(x => x.classList.toggle('on', x.dataset.f === f));
+  FILTER = f; PAGE = 0; renderRuns();
+};
+const STAT_ACTS = {
+  'flows-all':    () => setFilter('all'),
+  'flows-failed': () => setFilter('failed'),
+  'flows-tagged': () => setFilter('tagged'),
+  'flows-latest': () => { if (RUNS.length) openDrawer(RUNS[0]); },
+  'db-active':    () => {
+    if (!$('#dbs tr.sel')) setQuery('');            // filtered out of view
+    const tr = $('#dbs tr.sel');
+    if (tr) { tr.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }); replay(tr, 'flash'); }
+  },
+  'db-all':       () => setQuery(''),
+  'db-log':       () => openLog('Odoo log', '/api/odoo/log'),
+};
+document.addEventListener('click', e => {
+  const ver = e.target.closest('.vbadge[data-ver]');
+  if (ver) { e.stopPropagation(); setQuery('v' + ver.dataset.ver); return; }
+  const card = e.target.closest('.stat[role="button"]');
+  if (card && STAT_ACTS[card.dataset.act]) STAT_ACTS[card.dataset.act]();
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.stat[role="button"]')) {
+    e.preventDefault(); e.target.click();
+  }
 });
 $('#prev').onclick = () => goPage(-1);
 $('#next').onclick = () => goPage(1);

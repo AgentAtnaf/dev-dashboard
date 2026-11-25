@@ -287,7 +287,14 @@ def cmd_odoo(args: list):
     if subcommand == "status":
         d = _get("/api/odoo/status")
         if d.get("running"):
-            print(f"Odoo: RUNNING  pid={d.get('pid')}  db={d.get('db') or '—'}")
+            print(f"Odoo: RUNNING  pid={d.get('pid')}  db={d.get('db') or '—'}"
+                  + (f"  v{d['version']}" if d.get("version") else "")
+                  + (f"  port={d['port']}" if d.get("port") else ""))
+            # The db name is not proof of which install is serving it.
+            if d.get("bin"):
+                print(f"  bin:  {d['bin']}")
+            if d.get("conf"):
+                print(f"  conf: {d['conf']}")
         else:
             print("Odoo: STOPPED")
     elif subcommand == "start":

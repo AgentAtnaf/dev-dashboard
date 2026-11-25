@@ -997,6 +997,17 @@ def get_addons_profiles():
     return result
 
 
+class PathsCheck(BaseModel):
+    paths: List[str]
+
+
+@app.post("/api/addons-profiles/check-paths")
+def check_addons_paths(body: PathsCheck):
+    """Which paths are real directories. Read-only; lets the editor flag a typo,
+    which Odoo would otherwise skip silently along with every module under it."""
+    return {p: os.path.isdir(p) for p in body.paths[:200] if p.startswith("/home/server/")}
+
+
 class AddonsProfileUpdate(BaseModel):
     paths: List[str]
 
@@ -1031,10 +1042,39 @@ def delete_addons_profile(profile: str):
     return {"ok": True}
 
 
+def get_odoo_http_port(pid: Optional[int]) -> int:
+    """Port the live Odoo serves on: --http-port/-p, else the conf's http_port, else 8069."""
+    argv = get_odoo_cmdline(pid) if pid else []
+    for i, arg in enumerate(argv):
+        for flag in ("--http-port", "--xmlrpc-port", "-p"):
+            if arg == flag and i + 1 < len(argv) and argv[i + 1].isdigit():
+                return int(argv[i + 1])
+            if arg.startswith(flag + "=") and arg.split("=", 1)[1].isdigit():
+                return int(arg.split("=", 1)[1])
+    try:
+        with open(running_odoo_conf()) as f:
+            m = re.search(r'^(?:http_port|xmlrpc_port)\s*=\s*(\d+)', f.read(), re.MULTILINE)
+            if m:
+                return int(m.group(1))
+    except OSError:
+        pass
+    return 8069
+
+
 @app.get("/api/odoo/status")
 def odoo_status():
     pid = get_odoo_pid()
-    return {"running": pid is not None, "pid": pid, "db": get_active_db()}
+    db = get_active_db()
+    # Which install is actually running: a db name alone does not say, and a bare
+    # restart once bounced another project's server (odoo-trace-kit issue
+    # 2026-09-09-cli-odoo-bare-restart-wrong-install).
+    argv = get_odoo_cmdline(pid) if pid else []
+    conf = next((a.split("=", 1)[1] for a in argv if a.startswith("--config=")), None)
+    if conf is None and "-c" in argv and argv.index("-c") + 1 < len(argv):
+        conf = argv[argv.index("-c") + 1]
+    return {"running": pid is not None, "pid": pid, "db": db,
+            "port": get_odoo_http_port(pid), "version": detect_db_version(db) or None,
+            "bin": argv[1] if len(argv) > 1 else None, "conf": conf}
 
 
 @app.post("/api/odoo/stop")

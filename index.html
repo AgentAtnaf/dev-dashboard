@@ -800,6 +800,36 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
 ::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 4px; }
+
+/* DB profile dropdown + addons profile editor */
+select.psel { font: inherit; font-size: 11.5px; font-weight: 600; color: var(--vu-white, #fff); cursor: pointer;
+  background: rgba(255,255,255,.08); border: 1px solid var(--vu-border-navbar); border-radius: 999px;
+  padding: 2px 8px; max-width: 140px; }
+select.psel.none { color: var(--vu-grey-500); }
+select.psel option { color: #111; }
+.modal-box.wide { width: min(980px, 94vw); }
+.pe { display: flex; gap: 14px; min-height: 340px; max-height: 62vh; }
+.pe-list { flex: 0 0 170px; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }
+.pe-tab { font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; color: inherit;
+  display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 9px;
+  background: transparent; border: 1px solid transparent; }
+.pe-tab span { color: var(--vu-grey-500); font-weight: 500; }
+.pe-tab:hover { background: rgba(255,255,255,.07); }
+.pe-tab.on { background: rgba(255,255,255,.92); color: #111; }
+.pe-tab.on span { color: #555; }
+.pe-new { display: flex; gap: 5px; margin-top: auto; padding-top: 8px; }
+.pe-new input { flex: 1; min-width: 0; }
+.pe-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.pe-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; margin-bottom: 4px; }
+.pe-head .muted { font-size: 11.5px; }
+.pe-paths { display: flex; flex-direction: column; gap: 5px; }
+.pe-row { display: flex; align-items: center; gap: 5px; }
+.pe-row .n { flex: 0 0 18px; text-align: right; font-size: 11px; color: var(--vu-grey-500); }
+.pe-row input { flex: 1; min-width: 0; font-size: 12px; }
+.pe-row.add { margin-top: 6px; padding-left: 23px; }
+.pe-row.bad input { border-color: rgba(255,69,58,.7); }
+.pe-warn { font-size: 11px; color: #ff6961; padding-left: 23px; margin-top: -2px; }
+.iconbtn:disabled { opacity: .3; cursor: default; }
 </style>
 </head>
 <body>
@@ -876,7 +906,10 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
       <div class="lbl">Odoo server</div>
       <div class="val"><span class="dot down" id="odoo-dot"></span><span id="odoo-txt">checking…</span></div>
       <div class="db" id="odoo-db">—</div>
-      <button class="btn" style="margin-top:11px" id="odoo-btn">Start Odoo</button>
+      <a class="btn" id="odoo-open" target="_blank" rel="noopener"
+         style="margin-top:11px; display:none; text-align:center; text-decoration:none"
+         title="Open the running Odoo in a new tab">Open Odoo ↗</a>
+      <button class="btn" style="margin-top:7px" id="odoo-btn">Start Odoo</button>
       <div style="display:flex; gap:6px; margin-top:7px">
         <button class="iconbtn" style="flex:1" id="odoo-restart">Restart</button>
         <button class="iconbtn" style="flex:1" id="odoo-log">Log</button>
@@ -960,6 +993,8 @@ pre.out { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height
         <header>
           <h2>PostgreSQL databases</h2>
           <span class="sub">Click a row to switch Odoo's active database</span>
+          <button class="iconbtn" id="prof-edit" style="margin-left:auto"
+                  title="Edit the addons paths each profile puts in odoo.conf">Addons profiles…</button>
         </header>
         <div class="tscroll">
           <table class="dense">
@@ -1066,7 +1101,7 @@ let RUNS = [], FILTER = 'all', Q = '', PAGE = 0;
    tab is open — it used to call renderRuns() unconditionally, which meant
    typing in it did nothing anywhere except Flows. */
 let VIEW = 'flows';
-let DBROWS = [], DBACTIVE = null, SESSIONS = [];
+let DBROWS = [], DBACTIVE = null, SESSIONS = [], PROFILES = {};
 /* Motion helpers. ANIM is false only while the search box re-renders, so a
    list does not replay its entrance on every keystroke. */
 let ANIM = true, PAGE_DIR = 0;
@@ -1219,12 +1254,14 @@ async function loadDbs() {
 
   // Versions come one request per database; fire them together. The
   // profile map arrives in a single request alongside.
-  const [vers, profiles] = await Promise.all([
+  const [vers, profiles, addons] = await Promise.all([
     Promise.all(names.map(n =>
       api('/api/databases/' + encodeURIComponent(n) + '/version')
         .then(v => v.version || v.odoo_version || null).catch(() => null))),
     api('/api/db-profiles').catch(() => ({})),
+    api('/api/addons-profiles').catch(() => ({})),
   ]);
+  PROFILES = addons || {};
 
   const tally = {};
   vers.forEach(v => { if (v) tally[v] = (tally[v] || 0) + 1; });
@@ -1247,27 +1284,172 @@ function renderDbs() {
     <tr class="${r.name === active ? 'sel' : 'clickable'}" data-db="${esc(r.name)}" style="--i:${i}">
       <td>${r.ver ? `<span class="vbadge v${r.ver}">v${r.ver}</span>` : '<span class="muted">—</span>'}</td>
       <td class="mono">${esc(r.name)}${r.name === active ? ' <span class="tag" style="background:rgba(1,181,116,.18);color:var(--vu-success-focus)">in conf</span>' : ''}</td>
-      <td>${r.prof ? `<span class="vbadge" style="background:rgba(255,255,255,.08);color:var(--vu-grey-400)">${esc(r.prof)}</span>`
-                   : '<span class="muted" style="font-size:11.5px">no profile</span>'}</td>
-      <td class="num"><span class="muted" style="font-size:11.5px">${r.name === active ? '' : 'Switch →'}</span></td>
+      <td><select class="psel${r.prof ? '' : ' none'}" data-db="${esc(r.name)}"
+            title="${esc(r.prof ? r.prof + ':\n' + (PROFILES[r.prof] || []).join('\n') : 'No profile: switching leaves addons_path as it is')}">
+          ${['', ...Object.keys(PROFILES).sort()].map(p =>
+            `<option value="${esc(p)}"${p === (r.prof || '') ? ' selected' : ''}>${p ? esc(p) : 'no profile'}</option>`).join('')}
+        </select></td>
+      <td class="num">${r.name !== active ? '<span class="muted" style="font-size:11.5px">Switch →</span>'
+        : ODOO.up ? `<a class="chip" href="${esc(odooUrl())}" target="_blank" rel="noopener"
+                       style="text-decoration:none" title="Open ${esc(r.name)} in a new tab">Open ↗</a>`
+        : '<span class="muted" style="font-size:11.5px">Odoo stopped</span>'}</td>
     </tr>`).join('') : '<tr><td colspan="4"><div class="empty">No database matches that filter.</div></td></tr>';
 
   rowsIn($('#dbs'));
   $('#dbs').querySelectorAll('tr.clickable').forEach(tr => {
-    tr.onclick = () => switchDb(tr.dataset.db);
+    tr.onclick = e => { if (!e.target.closest('select, a')) switchDb(tr.dataset.db); };
+  });
+  $('#dbs').querySelectorAll('select.psel').forEach(sel => {
+    sel.onclick = e => e.stopPropagation();
+    sel.onchange = () => setDbProfile(sel.dataset.db, sel.value);
   });
 }
 
+/* Assigning a profile only records it; Switch is what writes addons_path into
+   the conf. The active row has no Switch, so offer to apply it there. */
+async function setDbProfile(db, prof) {
+  try {
+    await send('PUT', '/api/db-profiles/' + encodeURIComponent(db), { profile: prof });
+    const row = DBROWS.find(r => r.name === db);
+    if (row) row.prof = prof || null;
+    renderDbs();
+    if (db === DBACTIVE && prof) {
+      if (confirm(`${db} now uses the "${prof}" addons paths.\n\nIt is the active database, so this only reaches odoo.conf on a switch.\nApply it now? This rewrites the conf and restarts Odoo.`)) {
+        await applySwitch(db);
+      } else toast(`Saved. Takes effect the next time ${db} is switched to.`);
+    } else toast(prof ? `${db} → ${prof} (applied on switch)` : `${db}: profile cleared`);
+  } catch (e) { toast(String(e.message || e), true); renderDbs(); }
+}
+
+/* ── Addons profile editor ──────────────────────────────────────────────── */
+const PE = { edit: {}, cur: '', dirty: new Set(), exists: {} };
+
+function usedBy(p) { return DBROWS.filter(r => r.prof === p).map(r => r.name); }
+
+async function checkPaths(paths) {
+  const todo = paths.filter(p => p && !(p in PE.exists));
+  if (!todo.length) return;
+  try { Object.assign(PE.exists, await send('POST', '/api/addons-profiles/check-paths', { paths: todo })); } catch {}
+}
+
+function renderPE() {
+  const names = Object.keys(PE.edit).sort();
+  const paths = PE.edit[PE.cur] || [];
+  const used = usedBy(PE.cur);
+  $('#m-fields').innerHTML = `
+    <div class="pe">
+      <div class="pe-list">
+        ${names.map(n => `<button class="pe-tab${n === PE.cur ? ' on' : ''}" data-p="${esc(n)}">${esc(n)}${PE.dirty.has(n) ? ' •' : ''}
+           <span>${PE.edit[n].length}</span></button>`).join('')}
+        <div class="pe-new"><input id="pe-new" placeholder="new profile…" maxlength="20"><button class="iconbtn" id="pe-add-prof">Add</button></div>
+      </div>
+      <div class="pe-body">
+        ${PE.cur ? `
+        <div class="pe-head"><b>${esc(PE.cur)}</b>
+          <span class="muted">${used.length ? 'used by ' + used.map(esc).join(', ') : 'no database uses it'}</span>
+          <button class="iconbtn danger" id="pe-del" style="margin-left:auto">Delete profile</button></div>
+        <div class="pe-paths">
+          ${paths.map((p, i) => `
+          <div class="pe-row${PE.exists[p] === false ? ' bad' : ''}">
+            <span class="n">${i + 1}</span>
+            <input class="mono" data-i="${i}" value="${esc(p)}" spellcheck="false">
+            <button class="iconbtn" data-up="${i}" ${i ? '' : 'disabled'} title="Move up">↑</button>
+            <button class="iconbtn" data-dn="${i}" ${i < paths.length - 1 ? '' : 'disabled'} title="Move down">↓</button>
+            <button class="iconbtn danger" data-rm="${i}" title="Remove">✕</button>
+          </div>${PE.exists[p] === false ? '<div class="pe-warn">not a directory on this machine</div>' : ''}`).join('')
+          || '<div class="empty">No paths yet.</div>'}
+        </div>
+        <div class="pe-row add"><input class="mono" id="pe-path" placeholder="/home/server/…" spellcheck="false">
+          <button class="iconbtn" id="pe-add-path">Add path</button></div>
+        <p class="muted" style="font-size:11.5px;margin:2px 0 0">Order matters: Odoo uses the first copy of a module it finds.
+          Changes reach odoo.conf when a database using this profile is switched to.</p>` : '<div class="empty">Pick a profile.</div>'}
+      </div>
+    </div>`;
+
+  const f = $('#m-fields');
+  const touch = () => PE.dirty.add(PE.cur);
+  f.querySelectorAll('.pe-tab').forEach(b => b.onclick = () => { PE.cur = b.dataset.p; renderPE(); });
+  f.querySelectorAll('.pe-row input[data-i]').forEach(inp => inp.onchange = async () => {
+    PE.edit[PE.cur][+inp.dataset.i] = inp.value.trim(); touch();
+    await checkPaths([inp.value.trim()]); renderPE();
+  });
+  const move = (i, d) => { const a = PE.edit[PE.cur]; [a[i], a[i + d]] = [a[i + d], a[i]]; touch(); renderPE(); };
+  f.querySelectorAll('[data-up]').forEach(b => b.onclick = () => move(+b.dataset.up, -1));
+  f.querySelectorAll('[data-dn]').forEach(b => b.onclick = () => move(+b.dataset.dn, 1));
+  f.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { PE.edit[PE.cur].splice(+b.dataset.rm, 1); touch(); renderPE(); });
+  const addPath = async () => {
+    const v = $('#pe-path').value.trim();
+    if (!v) return;
+    if (!v.startsWith('/home/server/')) return toast('Paths must be under /home/server/', true);
+    if (PE.edit[PE.cur].includes(v)) return toast('Already in this profile', true);
+    PE.edit[PE.cur].push(v); touch();
+    await checkPaths([v]); renderPE(); $('#pe-path').focus();
+  };
+  if ($('#pe-add-path')) { $('#pe-add-path').onclick = addPath; $('#pe-path').onkeydown = e => { if (e.key === 'Enter') addPath(); }; }
+  const addProf = () => {
+    const n = $('#pe-new').value.trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_]{0,19}$/.test(n)) return toast('Name: a lowercase letter first, then letters, digits or _ (max 20)', true);
+    if (!PE.edit[n]) { PE.edit[n] = []; PE.dirty.add(n); }
+    PE.cur = n; renderPE();
+  };
+  $('#pe-add-prof').onclick = addProf;
+  $('#pe-new').onkeydown = e => { if (e.key === 'Enter') addProf(); };
+  if ($('#pe-del')) $('#pe-del').onclick = async () => {
+    const n = PE.cur, used = usedBy(n);
+    if (!confirm(`Delete the "${n}" profile?` + (used.length ? `\n\nUsed by ${used.join(', ')} — they will have no profile.` : ''))) return;
+    try {
+      if (n in PROFILES) await send('DELETE', '/api/addons-profiles/' + encodeURIComponent(n));
+      delete PE.edit[n]; delete PROFILES[n]; PE.dirty.delete(n);
+      PE.cur = Object.keys(PE.edit).sort()[0] || '';
+      toast(`Deleted ${n}`); renderPE(); loadDbs();
+    } catch (e) { toast(String(e.message || e), true); }   // built-in profiles are refused by the server
+  };
+}
+
+$('#prof-edit').onclick = async () => {
+  try { PROFILES = await api('/api/addons-profiles'); } catch {}
+  PE.edit = JSON.parse(JSON.stringify(PROFILES));
+  PE.dirty = new Set(); PE.exists = {};
+  const activeProf = (DBROWS.find(r => r.name === DBACTIVE) || {}).prof;
+  PE.cur = PE.edit[activeProf] ? activeProf : Object.keys(PE.edit).sort()[0] || '';
+  openModal('Addons profiles', '', async () => {
+    const todo = [...PE.dirty].filter(n => PE.edit[n]);
+    for (const n of todo) await send('PUT', '/api/addons-profiles/' + encodeURIComponent(n),
+                                     { paths: PE.edit[n].filter(Boolean) });
+    toast(todo.length ? `Saved ${todo.join(', ')}` : 'Nothing changed');
+    if (todo.length) loadDbs();
+  });
+  $('#modal .modal-box').classList.add('wide');
+  renderPE();
+  await checkPaths(Object.values(PE.edit).flat());
+  renderPE();
+};
+
 /* ── Odoo state ─────────────────────────────────────────────────────────── */
+/* The link uses the host this page was opened on, so it is 192.168.64.3 from
+   the Mac and 127.0.0.1 inside the VM; the port comes from the live process. */
+const ODOO = { up: false, port: 8069, db: '' };
+const odooUrl = () => `http://${location.hostname}:${ODOO.port}/web`;
+
 async function loadOdoo() {
   try {
     const s = await api('/api/odoo/status');
     const up = !!(s.running ?? s.is_running);
+    const was = ODOO.up + ODOO.db + ODOO.port;
+    Object.assign(ODOO, { up, port: s.port || 8069, db: s.db || '' });
     $('#odoo-dot').className = 'dot ' + (up ? 'up' : 'down');
-    $('#odoo-txt').textContent = up ? 'Running' : 'Not running';
+    $('#odoo-txt').textContent = up ? 'Running' + (s.version ? ` · v${s.version}` : '') : 'Not running';
     $('#odoo-db').textContent = s.db || s.database || s.active_db || '';
     $('#odoo-btn').textContent = up ? 'Stop Odoo' : 'Start Odoo';
+    // Open is the primary action while running; Stop (no confirm) must not look like it.
+    $('#odoo-btn').className = up ? 'iconbtn danger' : 'btn';
+    $('#odoo-btn').style.width = '100%';
     $('#d-state').textContent = up ? 'Running' : 'Stopped';
+    const open = $('#odoo-open');
+    open.style.display = up ? 'block' : 'none';
+    open.href = odooUrl();
+    open.title = `Open ${ODOO.db || 'Odoo'} — ${odooUrl()}`;
+    if (was !== ODOO.up + ODOO.db + ODOO.port && VIEW === 'databases' && DBROWS.length) renderDbs();
   } catch {
     $('#odoo-txt').textContent = 'unknown';
   }
@@ -1528,6 +1710,7 @@ modal.onclick = e => { if (e.target === modal) closeModal(); };
 
 function openModal(title, html, onSave) {
   $('#m-title').textContent = title;
+  $('#modal .modal-box').classList.remove('wide');
   $('#m-fields').innerHTML = html;
   modal.classList.add('open');
   const first = $('#m-fields').querySelector('input, textarea, select');
@@ -1604,6 +1787,10 @@ $('#purge').onclick = async () => {
 /* ── Database switch ────────────────────────────────────────────────────── */
 async function switchDb(name) {
   if (!confirm(`Switch Odoo's active database to ${name}?\n\nThis rewrites the odoo.conf for that version and restarts Odoo if it is running.`)) return;
+  await applySwitch(name);
+}
+
+async function applySwitch(name) {
   try {
     toast(`Switching to ${name}…`);
     const r = await send('POST', '/api/databases/switch', { db_name: name });
